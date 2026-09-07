@@ -9,6 +9,8 @@ Routes:
 - ``/``                — tiny HTML index with links (handy for debugging),
 - ``/channel.m3u``     — M3U playlist for Jellyfin Live TV (generated per
   request so the stream URL is derived from the Host header Jellyfin used),
+- ``/guide.xml``       — XMLTV electronic program guide (generated per request,
+  anchored to now so the always-on channel always shows as playing),
 - ``/stream/index.m3u8`` and ``/stream/segment_*.ts`` — the HLS output ffmpeg
   writes into ``hls_dir``.
 """
@@ -22,6 +24,7 @@ from urllib.parse import urlsplit
 
 from weatherstar.logging_setup import get_logger
 from weatherstar.streaming.m3u import Channel, channel_m3u
+from weatherstar.streaming.xmltv import guide_xml
 
 log = get_logger("weatherstar.stream.server")
 
@@ -33,9 +36,11 @@ _INDEX_HTML = """<!doctype html>
 <h1>Weather Star stream</h1>
 <ul>
 <li><a href="/channel.m3u">Jellyfin M3U playlist</a></li>
+<li><a href="/guide.xml">XMLTV program guide</a></li>
 <li><a href="/stream/index.m3u8">HLS master playlist</a></li>
 </ul>
-<p>Add the M3U URL above as a Jellyfin Live TV &rarr; M3U tuner.</p>
+<p>Add the M3U URL above as a Jellyfin Live TV &rarr; M3U tuner, and the
+guide URL above as a Live TV &rarr; guide data provider (XMLTV).</p>
 </body></html>
 """
 
@@ -53,13 +58,13 @@ def _base_url(handler: BaseHTTPRequestHandler, public_url: str | None) -> str:
 def make_handler(
     hls_dir: Path,
     *,
-    channel: Channel | None = None,
+    channel: Channel,
     public_url: str | None = None,
+    guide_days: int = 7,
 ) -> type[BaseHTTPRequestHandler]:
     """Build a request-handler class serving the HLS directory + channel M3U."""
 
     root = Path(hls_dir).resolve()
-    channel = channel or Channel()
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "WeatherStarStream/1.0"
@@ -83,8 +88,13 @@ def make_handler(
                 )
             elif path == "/channel.m3u":
                 base = _base_url(self, public_url)
-                body = channel_m3u(f"{base}/stream/index.m3u8", channel).encode("utf-8")
+                stream_url = f"{base}/stream/index.m3u8"
+                guide_url = f"{base}/guide.xml"
+                body = channel_m3u(stream_url, channel, guide_url=guide_url).encode("utf-8")
                 self._send_bytes(200, body, "application/x-mpegurl", head_only)
+            elif path == "/guide.xml":
+                body = guide_xml(channel, days=guide_days).encode("utf-8")
+                self._send_bytes(200, body, "application/xml", head_only)
             elif path.startswith("/stream/"):
                 self._serve_hls(path, head_only)
             else:
@@ -122,11 +132,17 @@ def start_server(
     host: str,
     port: int,
     hls_dir: Path,
-    channel: Channel | None = None,
+    channel: Channel,
     public_url: str | None = None,
+    guide_days: int = 7,
 ) -> tuple[ThreadingHTTPServer, threading.Thread]:
     """Start the HTTP server on a background thread; return (server, thread)."""
-    handler = make_handler(hls_dir, channel=channel, public_url=public_url)
+    handler = make_handler(
+        hls_dir,
+        channel=channel,
+        public_url=public_url,
+        guide_days=guide_days,
+    )
     server = ThreadingHTTPServer((host, port), handler)
     thread = threading.Thread(target=server.serve_forever, name="hls-http", daemon=True)
     thread.start()

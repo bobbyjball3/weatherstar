@@ -23,6 +23,7 @@ def _cfg(tmp_path, **overrides):
         "hls_time": 4.0,
         "hls_list_size": 6,
         "video_encoder": "libx264",
+        "channel_number": "5",
     }
     base.update(overrides)
     return StreamConfig(**base)

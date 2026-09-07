@@ -103,16 +103,33 @@ class StreamConfig(BaseModel):
         description="Number of interleaved audio channels (2 = stereo).",
     )
     channel_name: str = Field(
-        default="Weather Star",
-        description="Channel name advertised in the generated M3U playlist.",
+        default="Weather Star 4000",
+        description="Channel name advertised in the M3U playlist and XMLTV guide.",
     )
     channel_id: str = Field(
         default="weatherstar-4000",
-        description="Stable channel id used as the M3U tvg-id.",
+        description="Stable channel id used as the M3U tvg-id and XMLTV channel id.",
+    )
+    channel_number: str = Field(
+        description=(
+            "Channel number advertised in the M3U (tvg-chno) and XMLTV guide. "
+            "REQUIRED: supply a value here or via the WEATHERSTAR_STREAM_CHANNEL_NUMBER "
+            "environment variable. Any string is accepted, so sub-channels are possible "
+            "— use a decimal like '5.1' or '5.2'. A bare hyphenated form ('5-1') is not "
+            "honoured by Jellyfin's M3U tuner, which only keeps channel numbers it can "
+            "parse as a number."
+        ),
     )
     channel_logo: str | None = Field(
         default=None,
         description="Optional absolute URL for the channel logo (tvg-logo).",
+    )
+    guide_days: int = Field(
+        default=7,
+        description=(
+            "Days of hourly XMLTV guide emitted ahead of 'now' at /guide.xml. "
+            "The guide is regenerated per request and always covers the present."
+        ),
     )
 
     def uses_preset(self) -> bool:

@@ -50,7 +50,9 @@ def test_rendered_frames_reach_hls(tmp_path, pygame_env):
         {"pause": 0.4, "slides": [{"screen": "a"}, {"screen": "b"}]},
     )
     screens = [_Screen("a"), _Screen("b")]
-    cfg = StreamConfig(hls_dir=tmp_path / "hls", hls_time=1.0, preset="ultrafast")
+    cfg = StreamConfig(
+        hls_dir=tmp_path / "hls", hls_time=1.0, preset="ultrafast", channel_number="5"
+    )
     enc = FFmpegEncoder(cfg=cfg, width=width, height=height, fps=fps, feed_audio=False)
     enc.start()
     stop = threading.Event()

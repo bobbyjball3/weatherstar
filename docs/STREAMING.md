@@ -35,6 +35,7 @@ it, and deleting it leaves the simulator untouched (see
                                                                    │
                         ThreadingHTTPServer (server.py)  ◄──────────┘
                         GET /channel.m3u  ── M3U for Jellyfin Live TV
+                        GET /guide.xml    ── XMLTV EPG (generated per request)
                         GET /stream/…     ── the HLS window
 ```
 
@@ -78,16 +79,20 @@ is fed digital silence (`anullsrc`) so Jellyfin always sees an audio track.
 uv run weatherstar-stream --config ~/.config/weatherstar/config.toml
 ```
 
-Without a config file you can pass the essentials:
+Without a config file you can pass the essentials (note `channel_number` is
+**required** — no baked-in default — so supply it on the CLI or via the
+`WEATHERSTAR_STREAM_CHANNEL_NUMBER` env var):
 
 ```sh
-uv run weatherstar-stream --sequence main --lat 28.54 --lon -81.38
+uv run weatherstar-stream --sequence main --lat 28.54 --lon -81.38 --channel-number 5.1
+# or: WEATHERSTAR_STREAM_CHANNEL_NUMBER=5.1 uv run weatherstar-stream --sequence main --lat 28.54 --lon -81.38
 ```
 
 Check it is live:
 
 ```sh
 curl -s http://localhost:8080/channel.m3u        # the Jellyfin playlist
+curl -s http://localhost:8080/guide.xml          # the XMLTV program guide
 curl -s http://localhost:8080/stream/index.m3u8  # the HLS master playlist
 ```
 
@@ -130,15 +135,17 @@ section (`640 × 480 @ 30` by default).
 | `audio_bitrate` | `WEATHERSTAR_STREAM_AUDIO_BITRATE` | — | `128k` | `-b:a` |
 | `audio_rate` | `WEATHERSTAR_STREAM_AUDIO_RATE` | — | `48000` | Sample rate fed to the encoder |
 | `audio_channels` | `WEATHERSTAR_STREAM_AUDIO_CHANNELS` | — | `2` | Interleaved channels (2 = stereo) |
-| `channel_name` | `WEATHERSTAR_STREAM_CHANNEL_NAME` | — | `Weather Star` | Name in the M3U |
-| `channel_id` | `WEATHERSTAR_STREAM_CHANNEL_ID` | — | `weatherstar-4000` | M3U `tvg-id` |
+| `channel_name` | `WEATHERSTAR_STREAM_CHANNEL_NAME` | — | `Weather Star 4000` | Name in the M3U and XMLTV guide |
+| `channel_id` | `WEATHERSTAR_STREAM_CHANNEL_ID` | — | `weatherstar-4000` | M3U `tvg-id` / XMLTV channel id |
+| `channel_number` | `WEATHERSTAR_STREAM_CHANNEL_NUMBER` | `--channel-number` | *(required)* | Channel number (M3U `tvg-chno` / XMLTV display-name). No default — pick your own so it is never baked into the repo. Any string works; use a decimal for sub-channels (`5.1`/`5.2`). A bare hyphen (`5-1`) is dropped by Jellyfin's M3U tuner, which only keeps numbers it can parse. |
 | `channel_logo` | `WEATHERSTAR_STREAM_CHANNEL_LOGO` | — | *(none)* | M3U `tvg-logo` URL |
+| `guide_days` | `WEATHERSTAR_STREAM_GUIDE_DAYS` | — | `7` | Days of hourly XMLTV guide generated ahead of "now" |
 
 Other flags: `--music-dir DIR` (stream music from `DIR`, overriding config),
 `--no-music` (force silence), `--frames N` (smoke test: stop after N frames),
 plus the usual `--config/--sequence/--theme/--lat/--lon/--log-level/--log-file`.
 
-Example `[stream]` block:
+Example `[stream]` block (`channel_number` is required — substitute your own):
 
 ```toml
 [stream]
@@ -148,8 +155,14 @@ public_url = "http://weatherstar.lan:8080"
 video_encoder = "libx264"
 hls_time = 4.0
 hls_list_size = 6
-channel_name = "Weather Star"
+channel_name = "Weather Star 4000"
+channel_number = "5.1"
+guide_days = 7
 ```
+
+Running a second instance (e.g. the Weather Star 3000 theme)? Point each at its
+own `channel_id` and give them distinct numbers, e.g. `5.1` for the 4000 and
+`5.2` for the 3000, so both can appear in one Jellyfin channel list.
 
 ## Adding the channel to Jellyfin
 
@@ -158,12 +171,27 @@ channel_name = "Weather Star"
    `http://<weatherstar-host>:8080/channel.m3u`.
 3. Save and run a scan; a channel named after your `channel_name` should appear
    under Live TV.
+4. So clients can show a guide ("on now", etc.), add the EPG in
+   **Dashboard → Live TV → Guide Data Providers → Add → XMLTV**, set the file/URL
+   to `http://<weatherstar-host>:8080/guide.xml`, and save.
+5. Run another scan so Jellyfin matches the guide's channel (`tvg-id`) to the
+   tuner channel and fills the listing.
 
 The `/channel.m3u` response is generated **per request**: its stream URL is built
 from the `Host` header Jellyfin used (so it always points somewhere reachable),
 unless `[stream] public_url` is set, which wins. When deployed with the
 Nomad/Traefik job below, `public_url` is `http://weatherstar.nomad`, so the
 tuner URL is simply `http://weatherstar.nomad/channel.m3u`.
+
+The `/guide.xml` response is also generated **per request**, anchored to the
+moment it is fetched. The channel is 24/7, so no periodic regeneration is
+needed: the first hourly programme always opens at the current hour (that block
+is "on now") and hourly blocks roll forward for `guide_days`, so clients always
+see `Weather Star 4000` as playing now and into the future. The M3U advertises
+the guide on its `#EXTM3U` line (`url-tvg=…`), built from the same
+`public_url`/`Host` base as the stream URL, so IPTV apps that read the M3U
+directly (MisterFin, InFuse, Neptune, …) can auto-discover the EPG without a
+separate guide URL — both point at the same host you configured.
 
 Notes:
 - Jellyfin treats the channel as a live IPTV source; clients receive the HLS
@@ -282,6 +310,7 @@ URL:
 
 ```
 http://weatherstar.nomad/channel.m3u
+http://weatherstar.nomad/guide.xml
 ```
 
 Prereq on the Nomad client (the RK1): `/dev/mpp_service` and `/dev/dri` exist on

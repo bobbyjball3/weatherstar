@@ -18,7 +18,7 @@ def running_server(tmp_path):
         host="127.0.0.1",
         port=0,
         hls_dir=tmp_path,
-        channel=Channel(name="Weather Star", channel_id="weatherstar-4000"),
+        channel=Channel(number="5", name="Weather Star 4000", channel_id="weatherstar-4000"),
         public_url=None,
     )
     port = server.server_address[1]
@@ -43,6 +43,7 @@ def test_index_page(running_server):
     assert status == 200
     assert "text/html" in content_type
     assert b"channel.m3u" in body
+    assert b"guide.xml" in body
 
 
 def test_channel_m3u_uses_host_header(running_server):
@@ -54,7 +55,21 @@ def test_channel_m3u_uses_host_header(running_server):
     text = body.decode()
     assert text.startswith("#EXTM3U")
     assert f"http://{host}/stream/index.m3u8" in text
-    assert 'tvg-name="Weather Star"' in text
+    assert f'url-tvg="http://{host}/guide.xml"' in text
+    assert 'tvg-name="Weather Star 4000"' in text
+
+
+def test_guide_xml_route(running_server):
+    base, _ = running_server
+    status, content_type, body = _get(base, "/guide.xml")
+    assert status == 200
+    assert "xml" in content_type
+    text = body.decode()
+    assert text.startswith("<?xml")
+    assert '<channel id="weatherstar-4000">' in text
+    assert "<display-name>Weather Star 4000</display-name>" in text
+    assert "<display-name>5</display-name>" in text
+    assert "<programme " in text
 
 
 def test_channel_m3u_public_url_override(tmp_path):
@@ -63,7 +78,7 @@ def test_channel_m3u_public_url_override(tmp_path):
         host="127.0.0.1",
         port=0,
         hls_dir=tmp_path,
-        channel=Channel(),
+        channel=Channel(number="5"),
         public_url="http://rk1:9090",
     )
     port = server.server_address[1]
@@ -72,6 +87,7 @@ def test_channel_m3u_public_url_override(tmp_path):
     assert status == 200
     # public_url wins over whatever Host the request carried.
     assert b"http://rk1:9090/stream/index.m3u8" in body
+    assert b'url-tvg="http://rk1:9090/guide.xml"' in body
     assert b"http://127.0.0.1" not in body
     server.shutdown()
     server.server_close()

@@ -93,6 +93,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory of music files to stream (implies music on)",
     )
     group.add_argument(
+        "--channel-number",
+        dest="channel_number",
+        help="Channel number for the M3U/XMLTV (required; e.g. 5.1)",
+    )
+    group.add_argument(
         "--no-music",
         action="store_true",
         help="Stream digital silence instead of the ambient music playlist",
@@ -126,6 +131,7 @@ def _cli_overrides(args: argparse.Namespace) -> dict[str, Any]:
         "video_encoder",
         "preset",
         "audio_encoder",
+        "channel_number",
     ]
     return {key: getattr(args, key) for key in keys if getattr(args, key) is not None}
 
@@ -217,6 +223,7 @@ def _run(args: argparse.Namespace) -> int:
     channel = Channel(
         name=cfg.channel_name,
         channel_id=cfg.channel_id,
+        number=cfg.channel_number,
         logo=cfg.channel_logo,
     )
     server, _thread = start_server(
@@ -225,6 +232,7 @@ def _run(args: argparse.Namespace) -> int:
         hls_dir=cfg.hls_dir,
         channel=channel,
         public_url=cfg.public_url,
+        guide_days=cfg.guide_days,
     )
 
     try:

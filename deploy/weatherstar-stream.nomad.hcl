@@ -108,6 +108,13 @@ job "weatherstar-stream" {
         # /channel.m3u). Matches the Host(...) rule above.
         WEATHERSTAR_STREAM_PUBLIC_URL    = "http://weatherstar.nomad"
         WEATHERSTAR_STREAM_VIDEO_ENCODER = "h264_rkmpp"
+
+        # REQUIRED — there is no default channel number (so your real one never
+        # lands in the repo). Set WEATHERSTAR_STREAM_CHANNEL_NUMBER here or in
+        # the baked config's [stream] table or the job will fail to start.
+        # For a second Weather Star instance use a distinct number (e.g. 5.2)
+        # and a distinct WEATHERSTAR_STREAM_CHANNEL_ID/NAME.
+        # WEATHERSTAR_STREAM_CHANNEL_NUMBER = "5.1"
       }
 
       resources {

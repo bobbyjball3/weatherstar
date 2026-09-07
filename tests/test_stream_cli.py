@@ -107,6 +107,7 @@ def test_run_happy_path(tmp_path, monkeypatch):
     monkeypatch.setattr("weatherstar.engine.Builder", _FakeBuilder)
     monkeypatch.setattr("weatherstar.registry.discover", lambda: None)
     monkeypatch.setattr("weatherstar.logging_setup.setup_logging", lambda *a, **k: None)
+    monkeypatch.setenv("WEATHERSTAR_STREAM_CHANNEL_NUMBER", "5")
 
     encoder = _FakeEncoder()
     monkeypatch.setattr(cli_mod, "FFmpegEncoder", lambda *a, **k: encoder)

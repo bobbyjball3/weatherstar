@@ -261,3 +261,9 @@ level = "INFO"
 console = true
 # Optional JSON-lines log file path; omit to disable file logging.
 # file = "logs/weatherstar.jsonl"
+
+# Optional table for the `weatherstar-stream` broadcaster (see docs/STREAMING.md).
+# [stream]
+# Channel number for the M3U/XMLTV guide. REQUIRED for the streamer to start —
+# no default is shipped, so set it here or via WEATHERSTAR_STREAM_CHANNEL_NUMBER.
+# channel_number = "5.1"
