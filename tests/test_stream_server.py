@@ -5,8 +5,8 @@ import urllib.parse
 
 import pytest
 
-from weatherstar_stream.m3u import Channel
-from weatherstar_stream.server import start_server
+from weatherstar.streaming.m3u import Channel
+from weatherstar.streaming.server import start_server
 
 
 @pytest.fixture()

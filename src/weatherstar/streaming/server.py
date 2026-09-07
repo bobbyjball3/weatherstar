@@ -21,7 +21,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from weatherstar.logging_setup import get_logger
-from weatherstar_stream.m3u import Channel, channel_m3u
+from weatherstar.streaming.m3u import Channel, channel_m3u
 
 log = get_logger("weatherstar.stream.server")
 

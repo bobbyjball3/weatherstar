@@ -39,9 +39,9 @@ class _Ticker:
 
 
 def test_rendered_frames_reach_hls(tmp_path, pygame_env):
-    from weatherstar_stream.config import StreamConfig
-    from weatherstar_stream.encoder import FFmpegEncoder
-    from weatherstar_stream.loop import run_stream
+    from weatherstar.streaming.config import StreamConfig
+    from weatherstar.streaming.encoder import FFmpegEncoder
+    from weatherstar.streaming.loop import run_stream
 
     width, height, fps = 160, 120, 10
     surface = pygame.Surface((width, height))

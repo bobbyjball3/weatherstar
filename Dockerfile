@@ -8,9 +8,10 @@
 #
 #     docker build -f Dockerfile.rk1 -t weatherstar-stream:rk1 .
 #
-# The only runtime requirement beyond Python + pygame is an ffmpeg on PATH. All
-# Weather Star code (assets, config, music) is mounted at runtime; the image
-# only ships the Python package and ffmpeg.
+# The only runtime requirement beyond Python + pygame is an ffmpeg on PATH. The
+# image ships the Python package plus static_assets (fonts/backgrounds/logos/
+# icons/music); bake a config.toml into a derived image (default CMD path:
+# /etc/weatherstar/config.toml) and no runtime mounts are needed.
 
 FROM python:3.10-slim
 
@@ -34,6 +35,11 @@ COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 COPY static_assets ./static_assets
 
+# Bake the Weather Star config where the default CMD looks for it. Swap in a
+# different file (same path) via a derived image when your config differs.
+RUN mkdir -p /etc/weatherstar
+COPY deploy/weatherstar-config.toml /etc/weatherstar/config.toml
+
 RUN pip install --no-cache-dir .
 
 # Headless render + no audio device access.
@@ -41,13 +47,11 @@ ENV SDL_VIDEODRIVER=dummy \
     SDL_AUDIODRIVER=dummy \
     PYGAME_HIDE_SUPPORT_PROMPT=1
 
-# Runtime mounts (override in your scheduler/job):
-#   /config   -> config.toml   (weatherstar config, incl. [stream] + [media.music])
-#   /assets   -> static_assets (fonts/backgrounds/logos/icons)
-#   /music    -> your ambient music files
-#   /data/hls -> writable dir for the rolling HLS window (WEATHERSTAR_STREAM_HLS_DIR)
-VOLUME ["/config", "/assets", "/music", "/data/hls"]
+# Runtime mounts: none are required — bake your config/assets/music into a
+# derived image (e.g. `FROM weatherstar-stream` + `COPY config.toml
+# /etc/weatherstar/config.toml`). HLS segments go to the container's own
+# writable filesystem.
 
 EXPOSE 8080
 ENTRYPOINT ["weatherstar-stream"]
-CMD ["--config", "/config/config.toml"]
+CMD ["--config", "/etc/weatherstar/config.toml"]

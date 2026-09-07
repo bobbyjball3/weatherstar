@@ -104,6 +104,8 @@ def _decode_to_file(
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             check=False,
+            # Own session: a terminal Ctrl-C must not kill decoders behind us.
+            start_new_session=True,
         )
     except OSError as exc:  # pragma: no cover - ffmpeg vanished mid-run
         log.warning("music_decode_spawn_failed", track=track, error=str(exc))
@@ -213,41 +215,43 @@ class MusicFeed(threading.Thread):
         loader.start()
 
         self._work_dir.mkdir(parents=True, exist_ok=True)
-        while not self.stopping:
-            try:
-                pcm = self._ready.get(timeout=0.25)
-            except queue.Empty:
-                continue
-            if pcm is None or not pcm.exists():
-                continue
-            try:
-                fd = os.open(self.audio_fifo, os.O_WRONLY)
-            except OSError:  # pragma: no cover - encoder already torn down
-                log.warning("music_feed_fifo_gone")
-                break
-            try:
-                _pace_write(
-                    fd,
-                    pcm,
-                    bytes_per_second=self.bytes_per_second,
-                    stop_event=self.stop_event,
-                )
-            except OSError as exc:
-                # Encoder stopped/closed the FIFO while we were writing.
-                log.info("music_feed_write_interrupted", error=str(exc))
-                break
-            finally:
-                os.close(fd)
-            try:
-                pcm.unlink()
-            except FileNotFoundError:  # pragma: no cover - raced cleanup
-                pass
-        # Drop any PCM files decoded ahead of us when we stopped mid-stream.
-        for leftover in self._work_dir.glob("track-*.pcm"):
-            try:
-                leftover.unlink()
-            except FileNotFoundError:  # pragma: no cover - raced cleanup
-                pass
+        try:
+            while not self.stopping:
+                try:
+                    pcm = self._ready.get(timeout=0.25)
+                except queue.Empty:
+                    continue
+                if pcm is None or not pcm.exists():
+                    continue
+                try:
+                    fd = os.open(self.audio_fifo, os.O_WRONLY)
+                except OSError:  # pragma: no cover - encoder already torn down
+                    log.warning("music_feed_fifo_gone")
+                    break
+                try:
+                    _pace_write(
+                        fd,
+                        pcm,
+                        bytes_per_second=self.bytes_per_second,
+                        stop_event=self.stop_event,
+                    )
+                except OSError as exc:
+                    # Encoder stopped/closed the FIFO while we were writing.
+                    log.info("music_feed_write_interrupted", error=str(exc))
+                    break
+                finally:
+                    os.close(fd)
+                try:
+                    pcm.unlink()
+                except FileNotFoundError:  # pragma: no cover - raced cleanup
+                    pass
+        finally:
+            # Drop any PCM files decoded ahead of us when we stopped mid-stream.
+            for leftover in self._work_dir.glob("track-*.pcm"):
+                try:
+                    leftover.unlink()
+                except FileNotFoundError:  # pragma: no cover - raced cleanup
+                    pass
 
     def _load_loop(self, playlist: list[str]) -> None:
         """Decode tracks (wrapping forever) into temp PCM files for the feeder."""
@@ -268,7 +272,13 @@ class MusicFeed(threading.Thread):
                 time.sleep(0.25)  # avoid a hot decode loop when files are unreadable
             else:
                 log.info("music_track_ready", track=track)
-                # Block until the feeder has taken the previous track, so at most
-                # one decoded file is queued ahead of the one currently playing.
-                self._ready.put(pcm)
+                # Hand the file to the feeder, waiting only while it still wants
+                # it (so at most one track is queued ahead) and giving up the
+                # moment we are told to stop, so shutdown is prompt.
+                while not self.stopping:
+                    try:
+                        self._ready.put(pcm, timeout=0.25)
+                        break
+                    except queue.Full:
+                        continue
             index += 1

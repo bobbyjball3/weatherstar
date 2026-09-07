@@ -6,7 +6,7 @@ import types
 import pygame
 
 from weatherstar.sequence import Sequence
-from weatherstar_stream.loop import choose_ticker, run_stream
+from weatherstar.streaming.loop import choose_ticker, run_stream
 
 
 class _FakeScreen:

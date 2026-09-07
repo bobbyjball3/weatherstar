@@ -2,8 +2,8 @@
 
 import signal
 
-from weatherstar_stream import cli as cli_mod
-from weatherstar_stream.cli import _cli_overrides, _music_settings, build_parser
+from weatherstar.streaming import cli as cli_mod
+from weatherstar.streaming.cli import _cli_overrides, _music_settings, build_parser
 
 
 def _write_config(tmp_path):

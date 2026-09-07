@@ -38,12 +38,12 @@ from weatherstar.config_file import (  # noqa: E402
     discover_config_path,
 )
 from weatherstar.errors import ConfigError, WeatherStarError  # noqa: E402
-from weatherstar_stream.audio import MusicFeed, discover_tracks  # noqa: E402
-from weatherstar_stream.config import load_stream_config  # noqa: E402
-from weatherstar_stream.encoder import EncoderError, FFmpegEncoder  # noqa: E402
-from weatherstar_stream.loop import run_stream  # noqa: E402
-from weatherstar_stream.m3u import Channel  # noqa: E402
-from weatherstar_stream.server import start_server  # noqa: E402
+from weatherstar.streaming.audio import MusicFeed, discover_tracks  # noqa: E402
+from weatherstar.streaming.config import load_stream_config  # noqa: E402
+from weatherstar.streaming.encoder import EncoderError, FFmpegEncoder  # noqa: E402
+from weatherstar.streaming.loop import run_stream  # noqa: E402
+from weatherstar.streaming.m3u import Channel  # noqa: E402
+from weatherstar.streaming.server import start_server  # noqa: E402
 
 #: Music asset directory is always ``<asset_dir>/music`` (mirrors Music._tracks).
 _MUSIC_SUBDIR = "music"

@@ -16,6 +16,7 @@ import time
 from typing import Any
 
 from weatherstar.logging_setup import get_logger
+from weatherstar.streaming.encoder import EncoderError
 
 log = get_logger("weatherstar.stream.loop")
 
@@ -110,7 +111,16 @@ def run_stream(
         ticker.render(ctx.surface, ctx, dt)
 
         data = pygame.image.tobytes(ctx.surface, "RGB")
-        encoder.write_frame(data)
+        try:
+            encoder.write_frame(data)
+        except EncoderError:
+            # If we are already stopping (SIGTERM/SIGINT raced a dying ffmpeg),
+            # a dead encoder is expected — bow out cleanly instead of surfacing
+            # an error on shutdown.
+            if _should_stop():
+                running = False
+                break
+            raise
 
         if max_frames is not None and frames >= max_frames:
             running = False

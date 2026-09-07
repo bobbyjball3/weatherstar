@@ -31,7 +31,7 @@ from collections import deque
 from pathlib import Path
 
 from weatherstar.logging_setup import get_logger
-from weatherstar_stream.config import StreamConfig
+from weatherstar.streaming.config import StreamConfig
 
 log = get_logger("weatherstar.stream.encoder")
 
@@ -226,6 +226,10 @@ class FFmpegEncoder:
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
+            # Own session/process group: a terminal Ctrl-C (or any group signal)
+            # must not kill ffmpeg behind our back mid-write. We terminate it
+            # explicitly in stop().
+            start_new_session=True,
         )
         self._drain_stderr()
         self._started = True
@@ -233,6 +237,7 @@ class FFmpegEncoder:
         # feeding frames; a healthy process is left running (it cannot write the
         # first HLS segment until frames arrive).
         if not self._initial_check(timeout=3.0):
+            self._join_stderr()
             detail = self._tail_stderr()
             self.stop()
             raise EncoderError(
@@ -317,10 +322,19 @@ class FFmpegEncoder:
 
     def _check_alive(self) -> None:
         if self._proc is not None and self._proc.poll() is not None:
+            # Give the stderr drain a moment so the *real* ffmpeg error line
+            # (not just the tail we happened to read before it died) makes it
+            # into the message.
+            self._join_stderr()
             raise EncoderError(
                 f"ffmpeg exited during stream with code {self._proc.returncode}. "
                 + self._tail_stderr()
             )
+
+    def _join_stderr(self, timeout: float = 0.5) -> None:
+        thread = self._stderr_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout)
 
     def _pump(self, fd: int, data: bytes) -> None:
         """Write ``data`` to ``fd`` without ever blocking past a health check."""

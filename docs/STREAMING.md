@@ -5,7 +5,7 @@ the **same show headless** and broadcasts it as an always-on H.264 + AAC HLS
 stream that Jellyfin's **Live TV** consumes through a plain M3U tuner — the goal
 being to watch the channel on CRT displays fed by your Jellyfin instance.
 
-Everything described here lives in `src/weatherstar_stream/` plus its tests, a
+Everything described here lives in `src/weatherstar/streaming/` plus its tests, a
 console script, `Dockerfile`/`Dockerfile.rk1`, a Nomad job spec, and this page.
 It is a **fully optional, self-contained add-on**: the core engine never imports
 it, and deleting it leaves the simulator untouched (see
@@ -14,7 +14,7 @@ it, and deleting it leaves the simulator untouched (see
 ## How it works
 
 ```
-                     weatherstar_stream (headless, SDL dummy drivers)
+                     weatherstar.streaming (headless, SDL dummy drivers)
         ┌─────────────────────────────────────────────────────────────┐
         │  Builder.build_runtime()  (public core API, no core changes) │
         │        │ renders to an offscreen pygame.Surface             │
@@ -161,7 +161,9 @@ channel_name = "Weather Star"
 
 The `/channel.m3u` response is generated **per request**: its stream URL is built
 from the `Host` header Jellyfin used (so it always points somewhere reachable),
-unless `[stream] public_url` is set, which wins.
+unless `[stream] public_url` is set, which wins. When deployed with the
+Nomad/Traefik job below, `public_url` is `http://weatherstar.nomad`, so the
+tuner URL is simply `http://weatherstar.nomad/channel.m3u`.
 
 Notes:
 - Jellyfin treats the channel as a live IPTV source; clients receive the HLS
@@ -174,69 +176,121 @@ Notes:
 
 ## Hardware encoding on the RK1 / RK3588 (rkmpp)
 
-`[stream] video_encoder = "h264_rkmpp"` turns on VPU encoding. That requires:
-
-1. **A Rockchip ffmpeg.** Debian's ffmpeg has no rkmpp. Get one that was built
-   with `--enable-rkmpp` (Rockchip publishes these for their boards / Turing
-   Pi RK1 images, or build ffmpeg against `rockchip-mpp`). Keep it on PATH in
-   the container.
-2. **The MPP runtime** (`librockchip_mpp*`) loadable by that ffmpeg.
-3. **The VPU device nodes** exposed to the container.
-
-`Dockerfile.rk1` packages steps 1–2 for you (drop the `ffmpeg` binary and
-`librockchip_mpp*.so*` from an RK1 into `vendor/rk1/`, then build):
+`[stream] video_encoder = "h264_rkmpp"` turns on VPU encoding. Debian's ffmpeg
+has no rkmpp, so `Dockerfile.rk1` **builds ffmpeg + Rockchip MPP from source**
+inside a builder stage and ships the result in `/opt/rockchip`. This is an
+arm64 build — run it on the RK1 itself (or an arm64 builder), never on x86:
 
 ```sh
 docker build -f Dockerfile.rk1 -t weatherstar-stream:rk1 .
 ```
 
-Step 3 is a container/scheduler concern — the Nomad spec in
-[`deploy/weatherstar-stream.nomad.hcl`](../deploy/weatherstar-stream.nomad.hcl)
-mounts `/dev/mpp_service` and `/dev/dri`. Under plain Docker the equivalent is:
+The build compiles [rockchip-linux/mpp](https://github.com/rockchip-linux/mpp)
+(providing `librockchip_mpp`), then ffmpeg `7.1` configured with
+`--enable-libdrm --enable-rkmpp`; it takes several minutes. `rkmpp` needs the
+MPP runtime plus a DRM build dependency, which is why the image also installs
+`libdrm2` and why `ffmpeg`/its libs live under `/opt/rockchip`
+(`LD_LIBRARY_PATH` is set for you).
 
-```sh
-docker run --rm \
-  --device /dev/mpp_service --device /dev/dri \
-  -v /path/config:/config:ro -v /path/music:/music:ro \
-  -v /path/hls:/data/hls \
-  -e WEATHERSTAR_STREAM_VIDEO_ENCODER=h264_rkmpp \
-  -e WEATHERSTAR_STREAM_PUBLIC_URL=http://weatherstar.lan:8080 \
-  -p 8080:8080 \
-  weatherstar-stream:rk1 --config /config/config.toml
+At runtime the VPU device nodes must be visible to the container — under Nomad
+that's handled by running the task privileged (see below); under plain Docker
+you pass them with `--device`. The image already ships
+`static_assets` (fonts/backgrounds/logos/icons **and** the built-in smooth-jazz
+music) and `deploy/weatherstar-config.toml`, baked to
+`/etc/weatherstar/config.toml` (the default `CMD` path). To use a different
+config or add extra music, build a small derived image:
+
+```dockerfile
+FROM weatherstar-stream:rk1          # or weatherstar-stream (software encode)
+COPY my-config.toml /etc/weatherstar/config.toml
+COPY extra_music/ /srv/weatherstar/static_assets/weatherstar_4000/music/  # optional extras
 ```
 
-Verify with `ffmpeg -encoders | grep rkmpp` and watch the startup log for
-`encoder_start … -c:v h264_rkmpp`. RK1 caveat: AAC has no Rockchip hardware
-encoder, so `audio_encoder = "aac"` runs in software — audio is tiny compared
-with video and is not a bottleneck.
+Under plain Docker the runtime command is then just:
+
+```sh
+docker run --rm --device /dev/mpp_service --device /dev/dri \
+  -e WEATHERSTAR_STREAM_PUBLIC_URL=http://weatherstar.nomad \
+  -p 8080:8080 \
+  weatherstar-stream:rk1
+```
+
+Verify with `ffmpeg -encoders | grep rkmpp` (inside the container) and watch the
+startup log for `encoder_start … -c:v h264_rkmpp`. RK1 caveat: AAC has no
+Rockchip hardware encoder, so `audio_encoder = "aac"` runs in software — audio
+is tiny compared with video and is not a bottleneck.
 
 ## Running on Nomad (Docker)
 
-`deploy/weatherstar-stream.nomad.hcl` is a complete, commented job: it mounts
-the VPU devices, bind-mounts your config/assets/music and a writable HLS volume,
-sets the rkmpp encoder + `public_url` env, and forwards port 8080. SIGTERM is
-honoured (the render loop stops and the HLS window is finalised) with a 15s
-kill timeout.
+`deploy/weatherstar-stream.nomad.hcl` is a complete, commented job. It runs the
+container **privileged** for VPU access (Nomad/Docker `devices` passthrough
+proved unreliable for exposing `/dev/mpp_service` and `/dev/dri`, so the task
+uses `privileged = true`, which reliably exposes the host's device nodes to the
+container) — config, assets and music are baked into your image. It sets the
+rkmpp encoder and registers a **Consul service** whose `traefik.*` tags route
+`http://weatherstar.nomad` through Traefik (consul-catalog provider) to the
+stream. SIGTERM is honoured (the render loop stops and the HLS window is
+finalised) with a 15s kill timeout.
 
 ```sh
 nomad job run deploy/weatherstar-stream.nomad.hcl
 ```
 
-The image expects four mounts:
+The job's `image` is `weatherstar-stream:rk1` with `force_pull = false`, i.e. it
+runs from each client's **local Docker image cache** and never touches a
+registry. Get the image onto your nodes once (see below), then the job uses it
+directly.
 
-| Mount | Purpose |
-| --- | --- |
-| `/config/config.toml` | Weather Star config (the usual one, plus `[stream]`/`[media.music]`) |
-| `/assets` | `static_assets` tree (fonts, backgrounds, logos, icons) — `asset_dir` must point here if you override it |
-| `/music` | Ambient music files (`asset_dir` → `<dir>/music`) |
-| `/data/hls` | Writable rolling HLS window |
+**Build → export → import onto the RK1 nodes** (do this from your build machine,
+e.g. an Apple Silicon Mac so the arm64 build is native):
 
-Point `[media.music] asset_dir` at the absolute mount path, e.g.
-`asset_dir = "/assets/weatherstar_4000"`, or `--music-dir /music`.
+```sh
+# 1. Build the rk1 image (compiles ffmpeg + Rockchip MPP; takes a few minutes).
+docker build -f Dockerfile.rk1 -t weatherstar-stream:rk1 .
+
+# 2. Export it to a tarball (gzip to make the transfer small).
+docker save weatherstar-stream:rk1 | gzip > weatherstar-stream-rk1.tar.gz
+
+# 3. Copy it to each Nomad client node that might run the job (the RK1s).
+scp weatherstar-stream-rk1.tar.gz <user>@<rk1-node>:/tmp/
+
+# 4. Import (load) it into that node's local Docker daemon.
+ssh <user>@<rk1-node> 'gzip -dc /tmp/weatherstar-stream-rk1.tar.gz | docker load'
+
+# 5. Sanity check on the node, then run the job.
+ssh <user>@<rk1-node> 'docker images weatherstar-stream:rk1'
+nomad job run deploy/weatherstar-stream.nomad.hcl
+```
+
+Repeat steps 3–4 for every client in the job's datacenter. If a node's daemon
+already has the image, Nomad uses it as-is (no pull); only when it is missing
+will Nomad attempt a pull, so import before running. Building directly on an
+RK1 node works too and skips the export/import entirely.
+
+No per-route Traefik config is needed: the job's service tags declare the
+`Host(weatherstar.nomad)` rule, entrypoint, and backend port, and Traefik
+discovers them from Consul (make sure Traefik runs with the
+`providers.consulCatalog` provider enabled and a `web` entrypoint). The
+`WEATHERSTAR_STREAM_PUBLIC_URL` env is set to `http://weatherstar.nomad`, so the
+M3U the streamer publishes points back at the Traefik hostname (never a
+per-alloc port) — that same hostname is what you give Jellyfin as the M3U tuner
+URL:
+
+```
+http://weatherstar.nomad/channel.m3u
+```
+
+Prereq on the Nomad client (the RK1): `/dev/mpp_service` and `/dev/dri` exist on
+the host (privileged mode exposes them to the container). The job makes no other
+mounts; make sure your image's default `--config` path matches
+where you baked the config, or set it with `args = ["--config", "…"]` in the
+job. HLS segments are written to the container's own writable filesystem. If you
+use a Traefik `websecure` entrypoint with ACME instead of plain HTTP, flip the
+commented TLS tags in the job and change `public_url` to `https://…`.
 
 ## Design notes
 
-- **Separate, rippable package.** `src/weatherstar_stream/` never imports the
+- **Separate, rippable package.** `src/weatherstar/streaming/` never imports the
   plugin machinery and nothing in `weatherstar` imports it. It talks to the core
   only through public runtime APIs (`Builder`, `SequenceRunner`, the ticker
   classes, `AppConfig`).
@@ -291,15 +345,12 @@ task check && task coverage
 
 ## Removing it
 
-The streamer is deliberately deletable:
+The streamer is deliberately deletable. The engine never imports it, so the
+simulator keeps working unchanged:
 
-- `rm -r src/weatherstar_stream tests/test_stream_*.py`
-- `deploy/` (the Nomad job), `Dockerfile`, `Dockerfile.rk1`, `.dockerignore`
+- `rm -r src/weatherstar/streaming tests/test_stream_*.py`
+- `deploy/` (the Nomad job + baked config), `Dockerfile`, `Dockerfile.rk1`,
+  `.dockerignore`
 - `docs/STREAMING.md`
-- In `pyproject.toml`: remove the `weatherstar-stream` console script,
-  `weatherstar_stream` from `[tool.ruff.lint.isort] known-first-party`, and the
-  `"src/weatherstar_stream"` entry in `[tool.coverage.run] source`.
+- In `pyproject.toml`: remove the `weatherstar-stream` console script.
 - In `README.md`: drop the STREAMING doc row.
-
-None of these are imported by the Weather Star engine, so the simulator keeps
-working unchanged.

@@ -1,6 +1,6 @@
 """Tests for the Jellyfin M3U playlist generation."""
 
-from weatherstar_stream.m3u import Channel, channel_m3u
+from weatherstar.streaming.m3u import Channel, channel_m3u
 
 
 def test_default_channel_playlist():

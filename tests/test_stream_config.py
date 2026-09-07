@@ -2,7 +2,7 @@
 
 import types
 
-from weatherstar_stream.config import (
+from weatherstar.streaming.config import (
     ENV_PREFIX,
     StreamConfig,
     env_overrides,

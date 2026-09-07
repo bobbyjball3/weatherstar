@@ -5,8 +5,8 @@ import time
 
 import pytest
 
-from weatherstar_stream.config import StreamConfig
-from weatherstar_stream.encoder import (
+from weatherstar.streaming.config import StreamConfig
+from weatherstar.streaming.encoder import (
     AUDIO_FIFO_NAME,
     VIDEO_FIFO_NAME,
     EncoderError,
@@ -116,7 +116,7 @@ def test_argv_x265_keeps_sc_threshold(tmp_path):
 
 
 def test_encoder_requires_ffmpeg(monkeypatch, tmp_path):
-    monkeypatch.setattr("weatherstar_stream.encoder.shutil.which", lambda _name: None)
+    monkeypatch.setattr("weatherstar.streaming.encoder.shutil.which", lambda _name: None)
     with pytest.raises(EncoderError, match="ffmpeg executable not found"):
         FFmpegEncoder(cfg=_cfg(tmp_path), width=1, height=1, fps=1)
 

@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from weatherstar_stream import audio as audio_mod
-from weatherstar_stream.audio import MusicFeed, build_decode_argv, discover_tracks
+from weatherstar.streaming import audio as audio_mod
+from weatherstar.streaming.audio import MusicFeed, build_decode_argv, discover_tracks
 
 
 def test_discover_tracks_matches_music_globs(tmp_path):
@@ -58,7 +58,7 @@ def _drain(path: Path, dest: Path) -> subprocess.Popen:
 
 
 def test_pace_write_approximates_real_time(tmp_path, fifo):
-    from weatherstar_stream.audio import _pace_write
+    from weatherstar.streaming.audio import _pace_write
 
     sink = tmp_path / "captured.bin"
     reader = _drain(fifo, sink)
@@ -84,7 +84,7 @@ def test_pace_write_approximates_real_time(tmp_path, fifo):
 
 
 def test_pace_write_stops_on_event(tmp_path, fifo):
-    from weatherstar_stream.audio import _pace_write
+    from weatherstar.streaming.audio import _pace_write
 
     reader = _drain(fifo, tmp_path / "x.bin")
     try:
