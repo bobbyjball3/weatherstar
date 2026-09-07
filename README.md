@@ -123,3 +123,4 @@ Run `weatherstar --help` for the full list.
 | [docs/THEMES.md](docs/THEMES.md) | Themes: the 3000/4000 looks and how to add your own |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the plugin engine is put together |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Tooling, tests, CI, and the dev workflow |
+| [docs/STREAMING.md](docs/STREAMING.md) | Broadcasting the show as a Jellyfin TV channel (optional) |

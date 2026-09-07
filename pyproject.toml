@@ -21,6 +21,9 @@ dependencies = [
 
 [project.scripts]
 weatherstar = "weatherstar.cli:main"
+# Optional Jellyfin TV streamer; see docs/STREAMING.md. Deleting the
+# weatherstar_stream package (and this line) removes it without touching the app.
+weatherstar-stream = "weatherstar_stream.cli:main"
 
 # External plugins register here (built-ins register via the built-in registry).
 [project.entry-points."weatherstar.plugins"]
@@ -49,14 +52,14 @@ fixable = ["ALL"]
 unfixable = []
 
 [tool.ruff.lint.isort]
-known-first-party = ["weatherstar"]
+known-first-party = ["weatherstar", "weatherstar_stream"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--continue-on-collection-errors --junitxml=reports/junit.xml"
 
 [tool.coverage.run]
-source = ["src/weatherstar"]
+source = ["src/weatherstar", "src/weatherstar_stream"]
 branch = true
 
 [tool.coverage.report]

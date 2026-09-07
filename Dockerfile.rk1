@@ -1,0 +1,57 @@
+# Weather Star — Jellyfin streamer image for the RK1 / RK3588 (rkmpp encode).
+#
+# Builds the base image but replaces ffmpeg with a Rockchip-enabled build that
+# exposes `h264_rkmpp`. Rockchip's ffmpeg needs the MPP runtime libraries
+# (librockchip_mpp.so*, librockchip_mpp_*.so*) next to it.
+#
+# HOW TO BUILD (do this on/for the RK1, or wherever the ffmpeg+MPP libs live):
+#
+#   1. Put the pieces in ./vendor/rk1/:
+#        ffmpeg                     <- the rkmpp-enabled ffmpeg binary
+#        librockchip_mpp.so.1       <- Rockchip MPP shared libraries
+#        librockchip_mpp_avs.so.1
+#        ... (all *.so from the RK1's /usr/lib, e.g. /usr/lib/aarch64-linux-gnu)
+#   2. docker build -f Dockerfile.rk1 -t weatherstar-stream:rk1 .
+#
+# The resulting container runs the SAME python streamer; only the encoder
+# differs (`[stream] video_encoder = "h264_rkmpp"`). At runtime the job must
+# mount the VPU device nodes (see deploy/weatherstar-stream.nomad.hcl).
+
+FROM python:3.10-slim
+
+# Keep the base ffmpeg install so all the shared libs/plugins (aac encoder,
+# demuxers, lavfi for anullsrc, hls muxer) are present; we only swap the binary
+# and add the Rockchip MPP runtime.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ffmpeg \
+      libsdl2-2.0-0 \
+      libsdl2-ttf-2.0-0 \
+      fonts-dejavu-core \
+      ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /srv/weatherstar
+COPY pyproject.toml uv.lock README.md ./
+COPY src ./src
+COPY static_assets ./static_assets
+RUN pip install --no-cache-dir .
+
+# --- Rockchip ffmpeg + MPP runtime -----------------------------------------
+COPY vendor/rk1/ffmpeg /usr/local/bin/ffmpeg
+COPY vendor/rk1/*.so* /usr/local/lib/rockchip/
+RUN chmod +x /usr/local/bin/ffmpeg \
+ && echo "/usr/local/lib/rockchip" > /etc/ld.so.conf.d/rockchip-mpp.conf \
+ && ldconfig
+
+ENV SDL_VIDEODRIVER=dummy \
+    SDL_AUDIODRIVER=dummy \
+    PYGAME_HIDE_SUPPORT_PROMPT=1
+
+VOLUME ["/config", "/assets", "/music", "/data/hls"]
+EXPOSE 8080
+ENTRYPOINT ["weatherstar-stream"]
+CMD ["--config", "/config/config.toml"]
