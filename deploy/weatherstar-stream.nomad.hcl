@@ -34,7 +34,8 @@ job "weatherstar-stream" {
 
     network {
       port "http" {
-        static = 8080
+        # Traefik already binds 8080 on the nodes, so the streamer lives on 8081.
+        static = 8081
       }
     }
 
@@ -50,7 +51,7 @@ job "weatherstar-stream" {
         "traefik.http.routers.weatherstar.rule=Host(`weatherstar.nomad`)",
         "traefik.http.routers.weatherstar.entrypoints=web",
         "traefik.http.routers.weatherstar.service=weatherstar",
-        "traefik.http.services.weatherstar.loadbalancer.server.port=8080",
+        "traefik.http.services.weatherstar.loadbalancer.server.port=8081",
         # Optional HTTPS: uncomment and point at your ACME certresolver.
         # "traefik.http.routers.weatherstar.entrypoints=websecure",
         # "traefik.http.routers.weatherstar.tls.certresolver=letsencrypt",
@@ -97,6 +98,10 @@ job "weatherstar-stream" {
       env {
         SDL_VIDEODRIVER = "dummy"
         SDL_AUDIODRIVER = "dummy"
+
+        # Listen on the alloc port above (Traefik occupies 8080 on the nodes).
+        # WEATHERSTAR_STREAM_PORT overrides the streamer's default of 8080.
+        WEATHERSTAR_STREAM_PORT          = "8081"
 
         # Routing + encoder. The stream advertises THIS URL in its M3U so
         # Jellyfin reaches it through Traefik (same hostname it uses to fetch

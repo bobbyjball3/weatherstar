@@ -186,10 +186,12 @@ docker build -f Dockerfile.rk1 -t weatherstar-stream:rk1 .
 ```
 
 The build compiles [rockchip-linux/mpp](https://github.com/rockchip-linux/mpp)
-(providing `librockchip_mpp`), then ffmpeg `7.1` configured with
-`--enable-libdrm --enable-rkmpp`; it takes several minutes. `rkmpp` needs the
-MPP runtime plus a DRM build dependency, which is why the image also installs
-`libdrm2` and why `ffmpeg`/its libs live under `/opt/rockchip`
+(providing `librockchip_mpp`), then ffmpeg `8.1` configured with
+`--enable-libdrm --enable-rkmpp`; it takes several minutes. ffmpeg must be
+`>= 8.1` — upstream only added the rkmpp *encoders* (`h264_rkmpp`/`hevc_rkmpp`)
+in 8.1; 7.1 and earlier ship rkmpp decoders only. `rkmpp` needs the MPP runtime
+plus a DRM build dependency, which is why the image also installs `libdrm2` and
+why `ffmpeg`/its libs live under `/opt/rockchip`
 (`LD_LIBRARY_PATH` is set for you).
 
 At runtime the VPU device nodes must be visible to the container — under Nomad
@@ -271,6 +273,8 @@ No per-route Traefik config is needed: the job's service tags declare the
 `Host(weatherstar.nomad)` rule, entrypoint, and backend port, and Traefik
 discovers them from Consul (make sure Traefik runs with the
 `providers.consulCatalog` provider enabled and a `web` entrypoint). The
+streamer listens on **8081** inside the alloc — Traefik already occupies 8080 on
+the nodes — and Traefik routes `weatherstar.nomad` to it. The
 `WEATHERSTAR_STREAM_PUBLIC_URL` env is set to `http://weatherstar.nomad`, so the
 M3U the streamer publishes points back at the Traefik hostname (never a
 per-alloc port) — that same hostname is what you give Jellyfin as the M3U tuner

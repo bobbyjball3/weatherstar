@@ -34,7 +34,7 @@ def channel_m3u(stream_url: str, channel: Channel | None = None) -> str:
     return (
         "#EXTM3U\n"
         f'#EXTINF:-1 tvg-id="{channel.channel_id}" '
-        f'tvg-name="{channel.name}" tvg-chno="1"'
+        f'tvg-name="{channel.name}" tvg-chno="317"'
         f'{logo} group-title="{channel.group}",{channel.name}\n'
         f"{stream_url}\n"
     )

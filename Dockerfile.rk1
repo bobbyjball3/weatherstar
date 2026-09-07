@@ -1,19 +1,22 @@
 # Weather Star — Jellyfin streamer image for the RK1 / RK3588.
 #
-# Builds ffmpeg with Rockchip MPP (h264_rkmpp/hevc_rkmpp) support FROM SOURCE,
-# so you don't need to source a prebuilt ffmpeg. This is an arm64 build: run it
-# on the RK1 itself (or an arm64 builder), e.g.
+# Builds ffmpeg with Rockchip MPP (h264_rkmpp/hevc_rkmpp ENCODERS) support FROM
+# SOURCE, so you don't need to source a prebuilt ffmpeg. This is an arm64 build:
+# run it on the RK1 itself (or an arm64 builder such as an Apple Silicon Mac),
+# e.g.
 #
 #     docker build -f Dockerfile.rk1 -t weatherstar-stream:rk1 .
 #
-# Set [stream] video_encoder = "h264_rkmpp" at runtime. Encoding needs the VPU
-# device nodes exposed to the container (/dev/mpp_service and /dev/dri) — see
-# deploy/weatherstar-stream.nomad.hcl. The build takes several minutes.
+# IMPORTANT: upstream ffmpeg only gained the rkmpp ENCODERS in 8.1 (earlier
+# releases, incl. 7.1, ship rkmpp decoders only), so FFMPEG_VERSION must stay
+# >= 8.1. Set [stream] video_encoder = "h264_rkmpp" at runtime. Encoding needs
+# the VPU device nodes visible to the container (/dev/mpp_service, /dev/dri) —
+# see deploy/weatherstar-stream.nomad.hcl. The build takes several minutes.
 
 # Build stage: Rockchip MPP + ffmpeg (shared libs) installed under /opt/rockchip.
 FROM python:3.10-slim AS ffmpeg-builder
 
-ARG FFMPEG_VERSION=7.1
+ARG FFMPEG_VERSION=8.1
 ARG MPP_REPO=https://github.com/rockchip-linux/mpp.git
 
 RUN apt-get update \
