@@ -1,8 +1,9 @@
 """Local News screen: city header plus live local headlines.
 
-Headlines come from the ``local_news`` datasource (real Google News when
-available, bundled simulated headlines otherwise).  The ``headlines`` component
-scrolls them and shows a friendly placeholder when the feed is empty.
+Headlines come from the ``local_news`` datasource (webz.io when configured; the
+screen shows its empty-state message when the feed is unconfigured or empty).
+The ``headlines`` component scrolls them and shows a friendly placeholder when
+the feed is empty.
 """
 
 from __future__ import annotations

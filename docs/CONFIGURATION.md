@@ -143,6 +143,20 @@ user_agent = "weatherstar (python)"
 timeout = 10
 # User-Agent header sent with upstream API requests.
 user_agent = "weatherstar (python)"
+# Webz.io API key (sent as a Bearer token; empty disables live news).
+api_key = ""
+# Free-text news search query (e.g. 'News in Carmel, Indiana').
+news_query = ""
+# The number of stories to retrieve from webz (default 10).
+story_count = 10
+# A list of languages to use for news story searches.
+languages = ["english"]
+# List of two-letter country codes to use for news story searches.
+countries = ["US"]
+# List of categories to use when searching news stories from webz.io.
+news_categories = ["Crime, Law and Justice"]
+# Number of days to look in the past for news stories.
+news_day_count = 10
 
 [datasource.radar]
 # HTTP request timeout in seconds.
@@ -199,7 +213,7 @@ asset_dir = "static_assets/weatherstar_4000"
 # Directory containing this media's assets (project-relative or absolute).
 asset_dir = "static_assets/weatherstar_4000"
 # Play background music during the show.
-enabled = false
+enabled = true
 # Music volume, from 0.0 (silent) to 1.0 (full).
 volume = 0.6
 
@@ -315,5 +329,4 @@ level = "INFO"
 console = true
 # Optional JSON-lines log file path; omit to disable file logging.
 # file = "logs/weatherstar.jsonl"
-
 ```

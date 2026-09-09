@@ -34,7 +34,7 @@ MUSIC_GLOB = ("*.mp3", "*.ogg", "*.wav")
 class Music(Media):
     name = "music"
 
-    enabled: bool = Field(default=False, description="Play background music during the show.")
+    enabled: bool = Field(default=True, description="Play background music during the show.")
     volume: float = Field(default=0.6, description="Music volume, from 0.0 (silent) to 1.0 (full).")
 
     _playlist: list[str] = PrivateAttr(default_factory=list)

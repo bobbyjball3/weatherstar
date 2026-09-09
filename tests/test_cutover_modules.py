@@ -5,7 +5,6 @@ import time
 import pygame
 
 from weatherstar.datasources.history import HistoryDatasource
-from weatherstar.datasources.news import LocalNewsDatasource
 from weatherstar.media.icons import IconManager
 
 _DAILY = {
@@ -51,19 +50,6 @@ def test_history_scroll_offsets_advance_after_delay():
     temp_offset, precip_offset = ds.scroll_offsets
     assert temp_offset > 0.0
     assert precip_offset > 0.0
-
-
-def test_local_news_headlines_are_cached(monkeypatch):
-    ds = LocalNewsDatasource()
-    first = ds.headlines(28.5, -81.4)
-    assert first and all(item.title and item.url for item in first)
-    assert first[0].url.startswith("https://")
-    assert ds.headlines(28.5, -81.4) == first
-
-
-def test_local_news_city_name_empty_string():
-    ds = LocalNewsDatasource()
-    assert ds.city_name(28.5, -81.4) == ""
 
 
 def test_icon_manager_returns_scaled_and_named(pygame_env, tmp_path):
