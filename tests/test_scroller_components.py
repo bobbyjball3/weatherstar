@@ -62,15 +62,6 @@ def test_headline_scroller_empty_message(screen, fonts):
     assert _nonblank(screen, 0, 640, 220, 260)
 
 
-def test_headline_scroller_token_accent_no_numbers(screen, fonts):
-    from weatherstar.components.headline_scroller import HeadlineScroller
-
-    scroller = HeadlineScroller.model_validate({"numbered": False, "accent": "token"})
-    scroller.set_headlines([("r/news: Storm approaches [OC]", "u")])
-    scroller.render(screen, _ctx(screen, fonts))
-    assert _nonblank(screen, 95, 585, 100, 398)
-
-
 def test_headline_scroller_fetches_from_datasource_and_swallows_errors(screen, fonts):
     from weatherstar.components.headline_scroller import HeadlineScroller
 

@@ -36,8 +36,6 @@ ALL_SCREENS = [
     "radar",
     "earthquakes",
     "stock_market",
-    "msn_news",
-    "reddit_news",
     "local_news",
     "hazards",
     "marine_forecast",

@@ -4,12 +4,9 @@ Owns the classic Weather Star vertical-ticker mechanics shared by the news
 screens: a clip region, word-wrap, time-based upward scroll with wrap-around
 reset, and the "Updated" footer.  Content is either fetched from a configured
 datasource (``datasource_name``) each render or pushed by the owning screen via
-:meth:`set_headlines`.  Two accent styles are supported:
-
-- ``category`` (``local_news`` / ``msn_news``): split each headline on ``:`` and
-  color the category prefix by its keywords (red/yellow terms, else cyan).
-- ``token`` (``reddit_news``): color each token by its shape (``r/...`` cyan,
-  bracketed tags yellow).
+:meth:`set_headlines`.  Headlines are color-coded by category: each headline is
+split on ``:`` and the prefix is colored by its keywords (red/yellow terms,
+else cyan).
 """
 
 from __future__ import annotations
@@ -55,9 +52,9 @@ class HeadlineScroller(Component):
     numbered: bool = Field(
         default=True, description="Prefix each headline with a yellow number (1., 2., ...)."
     )
-    accent: Literal["category", "token"] = Field(
+    accent: Literal["category"] = Field(
         default="category",
-        description="Headline accent style: split categories on ':' or color tokens.",
+        description="Headline accent style: split categories on ':' and color the prefix.",
     )
     red_terms: tuple[str, ...] = Field(
         default=("BREAKING", "EMERGENCY", "ALERT"),
@@ -166,9 +163,6 @@ class HeadlineScroller(Component):
         x: int,
         y: int,
     ) -> None:
-        if self.accent == "token":
-            self._draw_token_line(surface, ctx, font, line, x, y)
-            return
         white = self.color(ctx, "white")
         if ":" not in line:
             surface.blit(font.render(line, True, white), (x, y))
@@ -186,27 +180,3 @@ class HeadlineScroller(Component):
         rest_text = font.render(rest, True, white)
         surface.blit(category_text, (x, y))
         surface.blit(rest_text, (x + category_text.get_width(), y))
-
-    @staticmethod
-    def _draw_token_line(
-        surface: pygame.Surface,
-        ctx: AppContext,
-        font: pygame.font.Font,
-        line: str,
-        x: int,
-        y: int,
-    ) -> None:
-        white = ctx.colors["white"]
-        cyan = ctx.colors["cyan"]
-        yellow = ctx.colors["yellow"]
-        x_pos = x
-        for part in line.split():
-            if part.startswith("r/") or part.startswith("/r/"):
-                color = cyan
-            elif part.startswith("[") and part.endswith("]"):
-                color = yellow
-            else:
-                color = white
-            text = font.render(part, True, color)
-            surface.blit(text, (x_pos, y))
-            x_pos += text.get_width() + 5

@@ -96,7 +96,7 @@ config.toml -> AppConfig (config_file.py) -> Builder -> AppContext/DataRegistry
   `screens`, `components`, `datasources`, `media`, `sequences` so they register.
 
 Kinds and current inventories:
-- **screen (28):** 28 display modules in `screens/` (incl. the regional_forecast
+- **screen (26):** 26 display modules in `screens/` (incl. the regional_forecast
   screen that has no classic WS4000 equivalent but is a Weather Star 3000 staple).
 - **datasource (8):** `alerts`, `earthquakes`, `history`, `local_news`,
   `radar`, `stocks`, `uv_index`, `weather`.

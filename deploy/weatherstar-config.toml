@@ -43,11 +43,9 @@ slides = [
     { screen = "local_news" },
 #    { screen = "marine_forecast" },
 #    { screen = "monthly_outlook" },
-#    { screen = "msn_news" },
 #    { screen = "precipitation_history" },
 #    { screen = "progress" },
     { screen = "radar" },
-#    { screen = "reddit_news" },
     { screen = "regional_forecast" },
     { screen = "regional_observations" },
     { screen = "severe_weather_alert" },
@@ -201,7 +199,7 @@ has_noaa = false
 [component.headlines]
 # Prefix each headline with a yellow number (1., 2., ...).
 numbered = true
-# Headline accent style: split categories on ':' or color tokens.
+# Headline accent style: split categories on ':' and color the prefix.
 accent = "category"
 # Category keywords drawn in red (category accent only).
 red_terms = ["BREAKING", "EMERGENCY", "ALERT"]
@@ -234,15 +232,11 @@ empty_text = "No headlines are available right now"
 
 [screen.monthly_outlook]
 
-[screen.msn_news]
-
 [screen.precipitation_history]
 
 [screen.progress]
 
 [screen.radar]
-
-[screen.reddit_news]
 
 [screen.regional_forecast]
 
