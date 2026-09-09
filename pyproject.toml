@@ -21,6 +21,10 @@ dependencies = [
 
 [project.scripts]
 weatherstar = "weatherstar.cli:main"
+# Optional Jellyfin TV streamer; see docs/STREAMING.md. Deleting the
+# weatherstar.streaming package (and this line) removes it without touching the
+# rest of the app.
+weatherstar-stream = "weatherstar.streaming.cli:main"
 
 # External plugins register here (built-ins register via the built-in registry).
 [project.entry-points."weatherstar.plugins"]
@@ -68,3 +72,4 @@ fail_under = 85
 
 [tool.coverage.xml]
 output = "coverage.xml"
+

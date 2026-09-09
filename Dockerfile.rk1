@@ -1,0 +1,114 @@
+# Weather Star — Jellyfin streamer image for the RK1 / RK3588.
+#
+# Builds ffmpeg with Rockchip MPP (h264_rkmpp/hevc_rkmpp ENCODERS) support FROM
+# SOURCE, so you don't need to source a prebuilt ffmpeg. This is an arm64 build:
+# run it on the RK1 itself (or an arm64 builder such as an Apple Silicon Mac),
+# e.g.
+#
+#     docker build -f Dockerfile.rk1 -t weatherstar-stream:rk1 .
+#
+# IMPORTANT: upstream ffmpeg only gained the rkmpp ENCODERS in 8.1 (earlier
+# releases, incl. 7.1, ship rkmpp decoders only), so FFMPEG_VERSION must stay
+# >= 8.1. Set [stream] video_encoder = "h264_rkmpp" at runtime. Encoding needs
+# the VPU device nodes visible to the container (/dev/mpp_service, /dev/dri) —
+# see deploy/weatherstar-stream.nomad.hcl. The build takes several minutes.
+
+# Build stage: Rockchip MPP + ffmpeg (shared libs) installed under /opt/rockchip.
+FROM python:3.10-slim AS ffmpeg-builder
+
+ARG FFMPEG_VERSION=8.1
+ARG MPP_REPO=https://github.com/rockchip-linux/mpp.git
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      build-essential \
+      cmake \
+      git \
+      curl \
+      ca-certificates \
+      xz-utils \
+      pkg-config \
+      libdrm-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# --- Rockchip MPP (Media Process Platform) runtime + headers ----------------
+RUN git clone --depth 1 "$MPP_REPO" /src/mpp \
+ && cmake -S /src/mpp -B /src/mpp/build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX=/opt/rockchip \
+      -DCMAKE_INSTALL_LIBDIR=lib \
+ && cmake --build /src/mpp/build -j"$(nproc)" \
+ && cmake --install /src/mpp/build \
+ && rm -rf /src/mpp
+
+# ffmpeg's configure asks pkg-config for BOTH "rkmpp" and "rockchip_mpp"; MPP
+# only ships the latter, so alias it.
+RUN printf 'prefix=/opt/rockchip\nexec_prefix=${prefix}\nlibdir=${prefix}/lib\nincludedir=${prefix}/include\n\nName: rkmpp\nDescription: Rockchip MPP (alias for ffmpeg)\nVersion: 1.3.10\nLibs: -L${libdir} -lrockchip_mpp\nCflags: -I${includedir}\n' \
+    > /opt/rockchip/lib/pkgconfig/rkmpp.pc
+
+# --- ffmpeg with rkmpp ------------------------------------------------------
+RUN curl -fsSL -o /tmp/ffmpeg.tar.xz \
+      "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" \
+ && mkdir -p /src/ffmpeg && tar -xJf /tmp/ffmpeg.tar.xz -C /src/ffmpeg --strip-components=1 \
+ && cd /src/ffmpeg \
+ && PKG_CONFIG_PATH=/opt/rockchip/lib/pkgconfig ./configure \
+      --prefix=/opt/rockchip \
+      --enable-shared \
+      --disable-static \
+      --disable-doc \
+      --disable-debug \
+      --disable-ffplay \
+      --enable-version3 \
+      --enable-libdrm \
+      --enable-rkmpp \
+ && make -j"$(nproc)" \
+ && make install \
+ && rm -rf /src/ffmpeg /tmp/ffmpeg.tar.xz
+
+# --- Runtime image -----------------------------------------------------------
+FROM python:3.10-slim
+
+# ffmpeg's external deps (libdrm) + SDL + fonts so pygame works headless.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      libdrm2 \
+      libsdl2-2.0-0 \
+      libsdl2-ttf-2.0-0 \
+      fonts-dejavu-core \
+      ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# The Rockchip ffmpeg + its shared libs + MPP runtime.
+COPY --from=ffmpeg-builder /opt/rockchip /opt/rockchip
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:/opt/rockchip/bin:$PATH" \
+    LD_LIBRARY_PATH="/opt/rockchip/lib"
+
+WORKDIR /srv/weatherstar
+COPY pyproject.toml uv.lock README.md ./
+COPY src ./src
+COPY static_assets ./static_assets
+
+# Bake the Weather Star config where the default CMD looks for it. Swap in a
+# different file (same path) via a derived image when your config differs.
+RUN mkdir -p /etc/weatherstar
+COPY deploy/weatherstar-config.toml /etc/weatherstar/config.toml
+
+RUN pip install --no-cache-dir .
+
+# Headless render + no audio device access.
+ENV SDL_VIDEODRIVER=dummy \
+    SDL_AUDIODRIVER=dummy \
+    PYGAME_HIDE_SUPPORT_PROMPT=1 \
+    WEATHERSTAR_STREAM_VIDEO_ENCODER=h264_rkmpp
+
+# Runtime mounts: none are required — bake your config/assets/music into a
+# derived image (e.g. `FROM weatherstar-stream:rk1` + `COPY config.toml
+# /etc/weatherstar/config.toml`). HLS segments go to the container's own
+# writable filesystem. Only the VPU device nodes need exposing at run time
+# (see deploy/weatherstar-stream.nomad.hcl).
+
+EXPOSE 8080
+ENTRYPOINT ["weatherstar-stream"]
+CMD ["--config", "/etc/weatherstar/config.toml"]
