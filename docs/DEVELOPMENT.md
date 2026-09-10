@@ -99,14 +99,15 @@ GitHub Actions is defined in
 
 ### Quality stage
 
-Each ruff check runs in its **own job** so failures are easy to isolate:
+Each check runs in its **own job** so failures are easy to isolate:
 
 | Job | Runs | Tool |
 | --- | --- | --- |
 | `ruff-check` | `task lint` | ruff lint |
 | `ruff-format` | `task format-check` | ruff format |
+| `deadcode` | `task deadcode` | vulture unused-code report |
 
-Both run on a single Python version (3.10).
+All three run on a single Python version (3.10).
 
 ### Testing stage
 
