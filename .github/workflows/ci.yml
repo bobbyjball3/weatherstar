@@ -36,7 +36,7 @@ jobs:
 
   # ---- Testing stage ------------------------------------------------------
   test:
-    name: pytest (${{ matrix.python-version }})
+    name: pytest unit (${{ matrix.python-version }})
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -82,3 +82,18 @@ jobs:
           path: |
             reports/junit.xml
             coverage.xml
+
+  test-integration:
+    name: pytest integration (ffmpeg)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          python-version: '3.10'
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Run ffmpeg integration tests
+        run: task test-integration

@@ -235,7 +235,6 @@ class WeatherStar3000Scroll(BottomTicker):
         super().__init__()
         self._message_elapsed = 0.0
         self._message_index = 0
-        self._reveal_x = float(_BAND_LEFT)
         self._revealing = False
 
     def _build_items(self, ctx: Any) -> list[str]:

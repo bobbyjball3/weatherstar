@@ -19,20 +19,6 @@ from weatherstar.renderer import Renderer, blit_text_shadowed
 _RENDERER = Renderer()
 
 
-def draw_background(surface: pygame.Surface, ctx: AppContext, name: str = "1") -> None:
-    """Blit a named background, falling back to the first available."""
-    backgrounds = ctx.assets.get("backgrounds")
-    if not backgrounds:
-        surface.fill(ctx.colors["blue"])
-        return
-    image = backgrounds.get(name)
-    if image is None:
-        first = next(iter(backgrounds.values()), None)
-        image = first
-    if image is not None:
-        surface.blit(image, (0, 0))
-
-
 def draw_header(
     surface: pygame.Surface,
     ctx: AppContext,

@@ -220,7 +220,7 @@ class LocalForecastScreen(Screen):
         width, height = image.get_size()
 
         def is_panel(rgb: tuple) -> bool:
-            r, g, b = rgb[:3]
+            r, _g, b = rgb[:3]
             return b > 120 and b - r > 40
 
         rows = list(range(140, min(height, 400), 3))

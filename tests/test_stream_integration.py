@@ -18,7 +18,10 @@ from weatherstar.sequence import Sequence
 
 FFMPEG = shutil.which("ffmpeg")
 
-pytestmark = pytest.mark.skipif(FFMPEG is None, reason="ffmpeg not installed")
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(FFMPEG is None, reason="ffmpeg not installed"),
+]
 
 
 class _Screen:

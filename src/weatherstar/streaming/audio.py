@@ -31,6 +31,7 @@ import shutil
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from weatherstar.logging_setup import get_logger
@@ -125,20 +126,30 @@ def _write_all(fd: int, data: bytes) -> None:
 
 
 def _pace_write(
-    fd: int, src: Path, *, bytes_per_second: float, stop_event: threading.Event
+    fd: int,
+    src: Path,
+    *,
+    bytes_per_second: float,
+    stop_event: threading.Event,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> None:
-    """Copy ``src`` to ``fd`` (the audio FIFO) at a real-time byte rate."""
+    """Copy ``src`` to ``fd`` (the audio FIFO) at a real-time byte rate.
+
+    ``clock``/``sleep`` are injectable so tests can exercise the pacing schedule
+    without depending on wall-clock time.
+    """
     size = src.stat().st_size
     quantum = max(4096, int(bytes_per_second * _QUANTUM_SECONDS))
     quantum_time = quantum / bytes_per_second
-    deadline = time.monotonic()
+    deadline = clock()
     sent = 0
     with src.open("rb") as handle:
         while sent < size and not stop_event.is_set():
             deadline += quantum_time
-            now = time.monotonic()
+            now = clock()
             if now < deadline:
-                time.sleep(deadline - now)
+                sleep(deadline - now)
             data = handle.read(quantum)
             if not data:
                 break
@@ -177,7 +188,6 @@ class MusicFeed(threading.Thread):
         self._work_dir = Path(work_dir or Path(self.audio_fifo).parent)
         # One decoded track queued ahead while another plays.
         self._ready: queue.Queue[Path | None] = queue.Queue(maxsize=1)
-        self._loader_errors = False
 
     # -- public API --------------------------------------------------------
 
@@ -268,7 +278,6 @@ class MusicFeed(threading.Thread):
                 volume=self.volume,
             )
             if pcm is None:
-                self._loader_errors = True
                 time.sleep(0.25)  # avoid a hot decode loop when files are unreadable
             else:
                 log.info("music_track_ready", track=track)

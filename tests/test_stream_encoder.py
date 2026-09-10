@@ -133,6 +133,7 @@ def test_write_frame_size_mismatch(tmp_path):
         enc.write_frame(b"x" * 10)
 
 
+@pytest.mark.integration
 @pytest.mark.skipif(FFMPEG is None, reason="ffmpeg not installed")
 def test_live_encode_produces_hls_window(tmp_path):
     cfg = _cfg(tmp_path, hls_time=1.0, preset="ultrafast")
@@ -154,6 +155,7 @@ def test_live_encode_produces_hls_window(tmp_path):
     assert not (cfg.hls_dir / AUDIO_FIFO_NAME).exists()
 
 
+@pytest.mark.integration
 @pytest.mark.skipif(FFMPEG is None, reason="ffmpeg not installed")
 def test_start_fails_loudly_on_bad_encoder(tmp_path):
     # ffmpeg only discovers an unknown encoder once the first frame arrives, so

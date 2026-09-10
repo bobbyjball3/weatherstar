@@ -33,8 +33,6 @@ SENSITIVE_KEY_PARTS = (
 
 LOGGER_NAME = "weatherstar"
 
-_config_installed = False
-
 
 def is_sensitive_key(key: str) -> bool:
     """Return True if a log/config key looks sensitive by name."""
@@ -80,7 +78,6 @@ def setup_logging(
     Sinks: console (ANSI colored) by default, plus an optional JSON-lines file.
     Returns the underlying stdlib logger; use :func:`get_logger` for a bound one.
     """
-    global _config_installed
     if colors is None:
         colors = sys.stdout.isatty() or _force_colors()
     if reset:
@@ -134,7 +131,6 @@ def setup_logging(
         wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=False,
     )
-    _config_installed = True
     return base
 
 
@@ -151,7 +147,3 @@ def _reset_logger() -> None:
 def get_logger(name: str = "weatherstar") -> Any:
     """Return a bound structlog logger writing through the stdlib setup."""
     return structlog.get_logger(name)
-
-
-def is_configured() -> bool:
-    return _config_installed

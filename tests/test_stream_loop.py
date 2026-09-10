@@ -10,15 +10,14 @@ from weatherstar.streaming.loop import choose_ticker, run_stream
 
 
 class _FakeScreen:
-    """Minimal stand-in for a Screen: records steps/draws."""
+    """Minimal stand-in for a Screen: records draws."""
 
     def __init__(self, name):
         self.name = name
-        self.steps = 0
         self.draws = 0
 
     def step(self, ctx, dt):
-        self.steps += 1
+        pass
 
     def draw(self, surface, ctx, dt):
         self.draws += 1
@@ -82,14 +81,14 @@ def test_run_stream_stops_on_stop_event(pygame_env):
     sequence = _sequence(("alpha",))
     encoder = _FakeEncoder()
     stop_event = threading.Event()
+    original_write = encoder.write_frame
 
-    def _set():
-        import time
+    def write_and_stop(data):
+        original_write(data)
+        if len(encoder.frames) == 5:
+            stop_event.set()
 
-        time.sleep(0.05)
-        stop_event.set()
-
-    threading.Thread(target=_set, daemon=True).start()
+    encoder.write_frame = write_and_stop
     frames = run_stream(
         _make_ctx(surface),
         screens,
@@ -100,7 +99,8 @@ def test_run_stream_stops_on_stop_event(pygame_env):
         stop_event=stop_event,
         wall_clock=False,
     )
-    assert frames >= 1
+    # The stop event fires deterministically on the 5th frame.
+    assert frames == 5
 
 
 def test_run_stream_tolerates_slide_exceptions(pygame_env):

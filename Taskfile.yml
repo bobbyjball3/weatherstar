@@ -48,14 +48,24 @@ tasks:
       - task: format
 
   test:
-    desc: Run the pytest suite
+    desc: Run the unit test suite (excludes ffmpeg integration tests)
     cmds:
-      - uv run pytest
+      - uv run pytest -m "not integration"
+
+  test-integration:
+    desc: Run the ffmpeg integration tests (requires ffmpeg on PATH)
+    cmds:
+      - uv run pytest -m integration
 
   coverage:
-    desc: Run pytest with coverage (source/branch/fail-under/xml configured in pyproject.toml)
+    desc: Run unit tests with coverage (source/branch/fail-under/xml configured in pyproject.toml)
     cmds:
-      - uv run pytest --cov --cov-report=term-missing --cov-report=xml
+      - uv run pytest -m "not integration" --cov --cov-report=term-missing --cov-report=xml
+
+  deadcode:
+    desc: Report unused code (vulture; config in pyproject.toml)
+    cmds:
+      - uv run vulture
 
   install-hooks:
     desc: Install pre-commit hooks

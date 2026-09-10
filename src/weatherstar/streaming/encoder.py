@@ -277,20 +277,6 @@ class FFmpegEncoder:
             raise EncoderError("encoder not started")
         self._pump(self._video_fd, data)
 
-    def _wait_ready(self, timeout: float = 30.0) -> bool:
-        """Wait until ffmpeg has written the master playlist (or died)."""
-        import time
-
-        playlist = self.cfg.hls_dir / "index.m3u8"
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if self._proc is not None and self._proc.poll() is not None:
-                return False
-            if playlist.exists():
-                return True
-            time.sleep(0.1)
-        return False
-
     def stop(self, timeout: float = 10.0) -> None:
         """Terminate ffmpeg, close FIFO ends and remove the FIFO files."""
         proc = self._proc

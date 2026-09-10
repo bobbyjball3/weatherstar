@@ -9,7 +9,7 @@ via :class:`ComponentSpec` entries in their ``layout``.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 import pygame
 from pydantic import BaseModel, ConfigDict, Field
@@ -42,13 +42,10 @@ class Component(Renderer, Plugin):
 
     Subclasses are ``@plugin``-registered Pydantic models: config fields become
     ``[component.<name>]`` config keys, while non-config metadata (``kind``,
-    ``name``, ``position``) stays as ``ClassVar``.
+    ``name``) stays as ``ClassVar``.
     """
 
     kind = "component"
-
-    #: (x, y) position within the screen (0..1 normalised, or absolute px).
-    position: ClassVar[tuple[int, int]] = (0, 0)
 
     def render(self, surface: pygame.Surface, ctx: AppContext) -> None:
         """Render this component onto ``surface`` using ``ctx``.

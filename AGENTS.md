@@ -28,17 +28,19 @@ group `weatherstar`.
 
 ```sh
 uv sync                # install (project + dev deps, pinned by uv.lock)
-uv run pytest          # full suite (headless)
-uv run pytest --cov --cov-report=term-missing   # coverage (gate: 80)
-uv run ruff check src tests
-uv run ruff format src tests
+task test              # unit suite (excludes ffmpeg integration tests)
+task test-integration  # ffmpeg integration tests (requires ffmpeg on PATH)
+task coverage          # unit tests with coverage (gate: 85)
+task check             # ruff lint + format check
+task deadcode          # vulture unused-code report
 uv run weatherstar --sequence main --lat 28.5383 --lon -81.3792 --validate  # headless render check
 uv run weatherstar generate-config --sequence main                          # regenerates commented config skeleton
 ```
 
-Run all quality gates with `task check` and tests+coverage with `task coverage`.
-The CI runs `task check` and `task coverage` — a change is not done until
-`task check` and `task coverage` pass.
+Run the quality gates with `task check`, tests+coverage with `task coverage`,
+real-encoder tests with `task test-integration`, and the dead-code report with
+`task deadcode`. CI runs `task check`, `task coverage` (Python 3.10 + 3.12) and
+`task test-integration` (with ffmpeg) — a change is not done until those pass.
 
 ## Test conventions (important)
 
@@ -57,6 +59,14 @@ The CI runs `task check` and `task coverage` — a change is not done until
 - **Do not add `# pragma: no cover`.** Cover behavior honestly; raise the
   coverage `fail_under` in `pyproject.toml` only when the suite's real coverage
   comfortably exceeds it.
+- **No wall-clock time dependence.** Unit tests must not `time.sleep` to let
+  work happen or assert on `time.monotonic()` deltas. Inject `clock`/`sleep`
+  for rate logic (see `streaming.audio._pace_write`), synchronize threads with
+  `threading.Event`/queues, and trigger stop conditions deterministically
+  (e.g. hook `write_frame`). The only exception is tests that drive a real
+  ffmpeg encoder: mark them `@pytest.mark.integration`, and run them via
+  `task test-integration` (the `test`/`coverage` tasks run `-m "not
+  integration"`; CI has a separate `test-integration` job with ffmpeg).
 - **Plugin import order pollution:** importing a plugin module (via the
   `@plugin` decorator) registers it in the global registry *at import time*.
   Pytest collects test modules alphabetically, so a module-level

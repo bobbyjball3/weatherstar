@@ -54,15 +54,6 @@ def _draw(screen):
     SevereWeatherAlertScreen().draw(screen, ctx, dt=0.016)
 
 
-def _non_black_rows(screen):
-    """Rows that contain any non-background pixel (70,0,0) -> content area."""
-    rows = []
-    for y in range(0, 480):
-        if any(screen.get_at((x, y))[:3] != (0, 0, 0) for x in range(0, 640, 4)):
-            rows.append(y)
-    return rows
-
-
 def test_alert_content_stays_above_ticker(screen):
     _draw(screen)
     # Text is white; confirm no white (text) pixels are under the ticker band.

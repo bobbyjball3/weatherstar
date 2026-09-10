@@ -168,20 +168,6 @@ def test_context_size_with_surface_and_registry_errors(pygame_env, screen):
 # ---------------------------------------------------------------------------
 
 
-def test_render_draw_background_paths(pygame_env, screen):
-    from weatherstar import render
-
-    ctx = _ctx(screen)
-    ctx.assets = {}
-    render.draw_background(screen, ctx, "1")  # no backgrounds -> fill
-
-    bg = pygame.Surface((10, 10))
-    bg.fill((1, 2, 3))
-    ctx.assets = {"backgrounds": {"2": bg}}
-    render.draw_background(screen, ctx, "1")  # named missing -> first available
-    assert screen.get_at((0, 0))[:3] == (1, 2, 3)
-
-
 def test_render_header_and_text(pygame_env, screen):
     from weatherstar import render
 

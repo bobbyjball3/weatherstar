@@ -76,7 +76,3 @@ class Sequence:
 
     def total_duration(self) -> float:
         return sum(self.pause_for(i) for i in range(len(self.slides)))
-
-
-def slide_pause(cli_pause: float | None = None) -> float:  # pragma: no cover - legacy
-    return cli_pause if cli_pause is not None else 15.0

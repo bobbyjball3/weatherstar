@@ -12,7 +12,6 @@ it. pygame is imported lazily so importing this module has no side effects.
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from weatherstar.logging_setup import get_logger
@@ -128,12 +127,3 @@ def run_stream(
             running = False
 
     return frames
-
-
-def wait_stop(
-    encoder: Any, hls_dir: Any, stop_event: Any, check_interval: float = 5.0
-) -> None:  # pragma: no cover
-    """Block until ``stop_event`` is set, so a container stays alive in the
-    foreground while the server/encoder run on other threads."""
-    while not stop_event.is_set():
-        time.sleep(check_interval)

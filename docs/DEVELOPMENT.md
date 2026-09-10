@@ -36,9 +36,11 @@ so your local environment matches CI.
 ## Everyday workflow
 
 ```sh
-task check        # ruff lint + ruff format --check
-task fix          # auto-fix what ruff can (mirrors the pre-commit hooks)
-task coverage     # full pytest suite with branch coverage + reports
+task check            # ruff lint + ruff format --check
+task fix              # auto-fix what ruff can (mirrors the pre-commit hooks)
+task coverage         # unit test suite with branch coverage + reports
+task test-integration # ffmpeg integration tests (requires ffmpeg on PATH)
+task deadcode         # report unused code (vulture)
 ```
 
 ### Available tasks
@@ -55,8 +57,10 @@ their tools through `uv run`, so they work on any machine with uv installed.
 | `format-check` | `uv run ruff format --check src tests` | Verify formatting |
 | `check` | `lint` + `format-check` | All quality gates |
 | `fix` | `lint-fix` + `format` | Auto-fix everything possible |
-| `test` | `uv run pytest` | Run the test suite |
-| `coverage` | `uv run pytest --cov …` | Run tests with coverage + XML report |
+| `test` | `uv run pytest -m "not integration"` | Run the unit test suite |
+| `test-integration` | `uv run pytest -m integration` | Run the ffmpeg integration tests |
+| `coverage` | `uv run pytest -m "not integration" --cov …` | Unit tests with coverage + XML report |
+| `deadcode` | `uv run vulture` | Report unused code (config in `pyproject.toml`) |
 | `install-hooks` | `uv run pre-commit install` | Install pre-commit hooks |
 
 ## Tool configuration
@@ -74,6 +78,11 @@ All tool configuration lives in [`pyproject.toml`](../pyproject.toml):
   (`source = ["src/weatherstar"]`) with branch coverage enabled. The
   `fail_under` gate in `[tool.coverage.report]` is a ratchet: raise it as
   coverage grows.
+- **vulture** — `[tool.vulture]` scans `src/weatherstar` and `tests` for unused
+  code. Plugin classes (registered by `@plugin` + name) and name-dispatched
+  methods (`compose_*`) are excluded via `ignore_decorators`/`ignore_names` and
+  the committed [`vulture_whitelist.py`](../vulture_whitelist.py). Run it with
+  `task deadcode`; it is not part of the blocking `task check` gate.
 
 ### pre-commit
 
@@ -103,9 +112,10 @@ Both run on a single Python version (3.10).
 
 | Job | Runs | Notes |
 | --- | --- | --- |
-| `test` | `task coverage` | Python 3.10 by default; see matrix below |
+| `test` | `task coverage` | Unit tests, Python 3.10 + 3.12 matrix |
+| `test-integration` | `task test-integration` | Installs ffmpeg, runs the `integration`-marked tests |
 
-The test job then:
+The `test` job then:
 
 1. **Publishes a test report** to the PR/commit checks
    (`EnricoMi/publish-unit-test-result-action`), generated from
@@ -122,16 +132,17 @@ publishing steps are skipped — the artifact is still uploaded.
 
 ### Running tests on more Python versions
 
-The `test` job uses a strategy matrix that defaults to a single version:
+The `test` job uses a strategy matrix:
 
 ```yaml
 matrix:
-  python-version: ['3.10']
+  python-version: ['3.10', '3.12']
 ```
 
-Add versions to that list (e.g. `['3.10', '3.11']`) to run the suite across
-them. Each matrix cell is pinned by overwriting `.python-version`, so CI never
-drifts from the committed lockfile.
+Add versions to that list to run the unit suite across them. Each matrix cell is
+pinned by overwriting `.python-version`, so CI never drifts from the committed
+lockfile. The `test-integration` job runs a single version since it exists to
+exercise the real ffmpeg encoder, not Python-version behaviour.
 
 ## Repository layout
 

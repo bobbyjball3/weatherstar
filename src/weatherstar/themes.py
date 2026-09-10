@@ -206,10 +206,6 @@ class Theme:
     #: entry applied to every screen before the screen-specific one).
     layout: dict[str, dict[str, Any]] = field(default_factory=dict)
 
-    def get_color(self, key: str) -> tuple[int, int, int]:
-        """Return a color by key, falling back to white when missing."""
-        return self.colors.get(key, (255, 255, 255))
-
     def layout_for(self, screen_name: str | None) -> dict[str, Any]:
         """Return merged layout tokens for a screen (defaults + screen entry)."""
         merged: dict[str, Any] = {}
@@ -349,7 +345,3 @@ def get_theme(theme_name: str, dirs: list[Path] | None = None) -> Theme:
 def available_themes(dirs: list[Path] | None = None) -> list[str]:
     """Return the discoverable theme names, sorted."""
     return sorted(load_themes(dirs))
-
-
-# Backwards-compatible spelling for anything that listed theme names.
-list_themes = available_themes

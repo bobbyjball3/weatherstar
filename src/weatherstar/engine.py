@@ -26,7 +26,6 @@ from weatherstar.registry import discover, registry
 from weatherstar.sequence import Sequence
 from weatherstar.themes import DEFAULT_THEME_NAME, ENV_THEME, LayoutVariant, coerce_variant
 
-DEFAULT_PAUSE = 15.0
 #: Media plugins auto-loaded into every context when they are registered.
 _BASE_MEDIA = ("fonts",)
 

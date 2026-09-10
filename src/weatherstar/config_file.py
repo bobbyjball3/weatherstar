@@ -26,7 +26,6 @@ from weatherstar.errors import ConfigError, SequenceError
 
 ENV_CONFIG = "WEATHERSTAR_CONFIG"
 ENV_SEQUENCE = "WEATHERSTAR_SEQUENCE"
-DEFAULT_FILE = Path.home() / ".config" / "weatherstar" / "config.toml"
 
 
 #: Non-plugin, top-level TOML sections that carry real options.  Each is a
@@ -120,9 +119,6 @@ class AppConfig:
     def scope(self, kind: str, name: str) -> dict[str, Any]:
         """Return the config scope dict for a plugin, or {} when absent."""
         return dict(self.data.get(kind, {}).get(name, {}) or {})
-
-    def scopes(self, kind: str) -> dict[str, dict[str, Any]]:
-        return {name: dict(scope) for name, scope in (self.data.get(kind) or {}).items()}
 
     # -- sequence selection -------------------------------------------------
 

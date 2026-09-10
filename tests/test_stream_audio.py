@@ -1,12 +1,8 @@
 """Tests for the software audio feeder (no real ffmpeg required)."""
 
 import os
-import subprocess
 import threading
-import time
 from pathlib import Path
-
-import pytest
 
 from weatherstar.streaming import audio as audio_mod
 from weatherstar.streaming.audio import MusicFeed, build_decode_argv, discover_tracks
@@ -44,110 +40,115 @@ def test_decode_argv_defaults_and_volume():
     assert argv_vol[argv_vol.index("-af") + 1] == "volume=0.6"
 
 
-@pytest.fixture()
-def fifo(tmp_path):
-    path = tmp_path / "audio.fifo"
-    os.mkfifo(path)
-    yield path
-
-
-def _drain(path: Path, dest: Path) -> subprocess.Popen:
-    """Open the FIFO for reading and copy whatever arrives into ``dest``."""
-    with dest.open("wb") as handle:
-        return subprocess.Popen(["cat", str(path)], stdout=handle)
-
-
-def test_pace_write_approximates_real_time(tmp_path, fifo):
+def test_pace_write_writes_all_bytes_and_paces(tmp_path):
     from weatherstar.streaming.audio import _pace_write
 
-    sink = tmp_path / "captured.bin"
-    reader = _drain(fifo, sink)
+    bps = 100_000
+    src = tmp_path / "slice.pcm"
+    src.write_bytes(b"\x00\x00" * (bps // 2))  # ~0.5s of audio at bps
+    sink = tmp_path / "out.bin"
+    fd = os.open(sink, os.O_WRONLY | os.O_CREAT, 0o644)
+    sleeps: list[float] = []
     try:
-        writer = os.open(fifo, os.O_RDWR)
-        stop = threading.Event()
-        pcm = tmp_path / "slice.pcm"
-        bps = 100_000
-        pcm.write_bytes(b"\x00\x00" * (bps // 2))  # ~0.5s of audio at bps
-        start = time.monotonic()
-        _pace_write(writer, pcm, bytes_per_second=bps, stop_event=stop)
-        elapsed = time.monotonic() - start
-        # 0.5s of audio must NOT be delivered instantly.
-        assert elapsed >= 0.30
-        reader.terminate()
-        reader.wait()
-        assert sink.stat().st_size == pcm.stat().st_size
+        _pace_write(
+            fd,
+            src,
+            bytes_per_second=bps,
+            stop_event=threading.Event(),
+            clock=lambda: 0.0,
+            sleep=sleeps.append,
+        )
     finally:
-        try:
-            os.close(writer)
-        except OSError:
-            pass
+        os.close(fd)
+
+    # Every byte is delivered...
+    assert sink.stat().st_size == src.stat().st_size
+    # ...and it was paced one sleep per quantum, not written instantly.
+    quantum = max(4096, int(bps * 0.05))
+    assert len(sleeps) == -(-src.stat().st_size // quantum)
+    assert all(duration > 0 for duration in sleeps)
 
 
-def test_pace_write_stops_on_event(tmp_path, fifo):
+def test_pace_write_stops_on_event(tmp_path):
     from weatherstar.streaming.audio import _pace_write
 
-    reader = _drain(fifo, tmp_path / "x.bin")
-    try:
-        writer = os.open(fifo, os.O_RDWR)
-        stop = threading.Event()
-        pcm = tmp_path / "long.pcm"
-        bps = 100_000
-        pcm.write_bytes(b"\x00\x00" * (bps * 5))  # 5s at bps
+    bps = 100_000
+    src = tmp_path / "long.pcm"
+    src.write_bytes(b"\x00\x00" * (bps * 5))  # 5s at bps
+    sink = tmp_path / "out.bin"
+    fd = os.open(sink, os.O_WRONLY | os.O_CREAT, 0o644)
+    stop = threading.Event()
+    ticks = 0
 
-        def _halt():
-            time.sleep(0.2)
+    def sleep_then_stop(_seconds: float) -> None:
+        nonlocal ticks
+        ticks += 1
+        if ticks >= 3:
             stop.set()
 
-        threading.Thread(target=_halt, daemon=True).start()
-        start = time.monotonic()
-        _pace_write(writer, pcm, bytes_per_second=bps, stop_event=stop)
-        assert time.monotonic() - start < 4.0
-        reader.terminate()
-        reader.wait()
+    try:
+        _pace_write(
+            fd,
+            src,
+            bytes_per_second=bps,
+            stop_event=stop,
+            clock=lambda: 0.0,
+            sleep=sleep_then_stop,
+        )
     finally:
-        try:
-            os.close(writer)
-        except OSError:
-            pass
+        os.close(fd)
+
+    # The stop event halts pacing after a few quanta, far short of the source.
+    assert ticks == 3
+    assert 0 < sink.stat().st_size < src.stat().st_size
 
 
-def test_music_feed_plays_tracks_and_stops_cleanly(tmp_path, fifo, monkeypatch):
-    # A real 0.4s PCM file stands in for an ffmpeg decode, so no ffmpeg needed.
+def test_music_feed_plays_tracks_and_stops_cleanly(tmp_path, monkeypatch):
+    # A fake decode + pacing stub keep this deterministic: no ffmpeg, no sleeps.
     def fake_decode(ffmpeg, track, dest, *, sample_rate, channels, volume):
-        bps = sample_rate * channels * 2
-        dest.write_bytes(b"\x00\x00" * int(bps * 0.4))
+        dest.write_bytes(b"\x00\x00" * 1024)
         return dest
 
     monkeypatch.setattr(audio_mod, "_decode_to_file", fake_decode)
+
+    pacing = threading.Event()
+
+    def fake_pace(fd, src, *, bytes_per_second, stop_event, **kwargs):
+        os.write(fd, b"\x00\x00" * 512)
+        pacing.set()
+        stop_event.wait(timeout=5)
+
+    monkeypatch.setattr(audio_mod, "_pace_write", fake_pace)
+
     (tmp_path / "song.mp3").write_bytes(b"x")
-    sink = tmp_path / "captured.bin"
-    reader = _drain(fifo, sink)
+    sink = tmp_path / "out.pcm"
+    sink.write_bytes(b"")
 
     feed = MusicFeed(
         tracks=[str(tmp_path / "song.mp3")],
-        audio_fifo=str(fifo),
+        audio_fifo=str(sink),
         ffmpeg="not-used",
-        sample_rate=1000,  # small, so the test stays fast
+        sample_rate=1000,
         channels=1,
         work_dir=tmp_path,
     )
     feed.start()
-    time.sleep(1.0)
+    assert pacing.wait(timeout=5)  # audio is flowing
     assert feed.is_alive()
     feed.shutdown()
     feed.join(timeout=5)
     assert not feed.is_alive()
 
-    reader.terminate()
-    reader.wait()
-    # Audio actually flowed through the FIFO.
+    # Audio actually flowed through the sink.
     assert sink.stat().st_size > 0
     # Decoded temp files are cleaned up.
     assert not list(tmp_path.glob("track-*.pcm"))
 
 
-def test_music_feed_no_tracks(tmp_path, fifo):
-    feed = MusicFeed(tracks=[], audio_fifo=str(fifo), ffmpeg="ffmpeg")
+def test_music_feed_no_tracks(tmp_path):
+    sink = tmp_path / "out.pcm"
+    sink.write_bytes(b"")
+    feed = MusicFeed(tracks=[], audio_fifo=str(sink), ffmpeg="ffmpeg")
     feed.start()
     feed.join(timeout=5)
     assert not feed.is_alive()
