@@ -19,6 +19,7 @@ import pygame
 from pydantic import PrivateAttr
 
 from weatherstar.datasources.feeds import Alert
+from weatherstar.plugin import memoize
 from weatherstar.registry import plugin
 from weatherstar.screens.base import Screen
 
@@ -35,17 +36,13 @@ class SevereWeatherAlertScreen(Screen):
     name = "severe_weather_alert"
     datasources = ("alerts",)
 
-    _font_cache: dict[int, pygame.font.Font] = PrivateAttr(default_factory=dict)
     _elapsed: float = PrivateAttr(default=0.0)
 
     # -- fonts ---------------------------------------------------------------
 
+    @memoize
     def _font(self, size: int) -> pygame.font.Font:
-        font = self._font_cache.get(size)
-        if font is None:
-            font = pygame.font.Font(None, size)
-            self._font_cache[size] = font
-        return font
+        return pygame.font.Font(None, size)
 
     # -- entry ---------------------------------------------------------------
 

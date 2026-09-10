@@ -1,9 +1,10 @@
 """Local news datasource: city label + headline sourcing for the news screens.
 
-Headlines come from the webz.io News Context API when configured (an ``api_key``
-plus a ``news_query``).  With no configuration the datasource degrades to no
-headlines and the screen shows its empty-state message.  City naming defers to
-the weather datasource (via the screen), so this datasource only supplies
+Headlines come from the webz.io News Context API when configured (a
+``news_query`` plus an ``Authorization`` header, e.g. ``headers = {
+Authorization = "Bearer <key>" }``).  With no query the datasource degrades to
+no headlines and the screen shows its empty-state message.  City naming defers
+to the weather datasource (via the screen), so this datasource only supplies
 headlines.
 """
 
@@ -12,10 +13,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import ClassVar
 
-import requests
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field
 
-from weatherstar.datasources.base import Datasource, cached
+from weatherstar.datasources.base import Datasource
 from weatherstar.registry import plugin
 
 
@@ -33,11 +33,6 @@ class LocalNewsDatasource(Datasource):
     name = "local_news"
 
     _api_endpoint: ClassVar[str] = "https://api.webz.io/api/news/context"
-
-    api_key: SecretStr | None = Field(
-        default=None,
-        description=("Webz.io API key (sent as a Bearer token; empty disables live news)."),
-    )
 
     news_query: str = Field(
         default="",
@@ -69,14 +64,9 @@ class LocalNewsDatasource(Datasource):
         description="Number of days to look in the past for news stories.",
     )
 
-    def _apply_auth(self, session: requests.Session) -> None:
-        """Authenticate with a Bearer token instead of the default header."""
-        if self.api_key:
-            session.headers.update({"Authorization": f"Bearer {self.api_key.get_secret_value()}"})
-
     def _get_headlines(self) -> list[Headline]:
         """Fetch headlines from the webz.io context endpoint ([] when disabled)."""
-        if not self.news_query or not self.api_key:
+        if not self.news_query:
             return []
 
         published_from = datetime.now(timezone.utc) - timedelta(days=self.news_day_count)
@@ -90,7 +80,7 @@ class LocalNewsDatasource(Datasource):
                 "category": self.news_categories,
             },
         }
-        payload = self.http_post_json(self._api_endpoint, body)
+        payload = self.fetch("POST", self._api_endpoint, json=body)
         results = payload.get("results") if isinstance(payload, dict) else None
         headlines: list[Headline] = []
         for result in results or []:
@@ -107,7 +97,6 @@ class LocalNewsDatasource(Datasource):
         """Return a city label; empty lets the screen fall back to weather data."""
         return ""
 
-    @cached(3600)
     def headlines(self, lat: float, lon: float) -> list[Headline]:
         """Return the local headlines (most recent first)."""
         return self._get_headlines()

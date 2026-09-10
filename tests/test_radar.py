@@ -1,5 +1,6 @@
 """Tests for the NOAA radar datasource."""
 
+import httpx
 import pygame
 import pytest
 
@@ -47,12 +48,17 @@ def test_frames_returns_cropped_still_list(monkeypatch, tmp_path):
     assert len(calls) == 6
 
 
-def test_frames_offline_returns_empty_and_caches(monkeypatch):
+def test_frames_offline_returns_empty_and_caches():
     ds = NoaaRadar()
     calls = []
-    monkeypatch.setattr(ds, "_fetch_bytes", lambda url: calls.append(url) or None)
+
+    def handler(request):
+        calls.append(str(request.url))
+        return httpx.Response(404)
+
+    ds._client = httpx.Client(transport=httpx.MockTransport(handler))
     assert ds.frames(28.54, -81.38) == []
     # Cached: a second call must not trigger another network burst.
     assert ds.frames(28.54, -81.38) == []
-    # 6 indexes x 3 candidate templates each tried while offline.
+    # 6 indexes x 3 candidate templates each tried once; failures cached.
     assert len(calls) == 18

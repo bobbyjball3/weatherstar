@@ -115,16 +115,24 @@ slides = [
 [datasource.alerts]
 # HTTP request timeout in seconds.
 timeout = 10
-# User-Agent header sent with upstream API requests.
-user_agent = "weatherstar (python)"
+# Seconds each HTTP response is cached (success or failure).
+cache_ttl = 300
+# Static HTTP headers merged into every request.
+headers = {User-Agent = "weatherstar (python)"}
+# Static query parameters merged into every request.
+query = {}
 # Colon-separated severity order used to sort alerts (most severe first).
 severity_priority = "extreme:severe:moderate"
 
 [datasource.earthquakes]
 # HTTP request timeout in seconds.
 timeout = 10
-# User-Agent header sent with upstream API requests.
-user_agent = "weatherstar (python)"
+# Seconds each HTTP response is cached (success or failure).
+cache_ttl = 300
+# Static HTTP headers merged into every request.
+headers = {User-Agent = "weatherstar (python)"}
+# Static query parameters merged into every request.
+query = {}
 # Minimum earthquake magnitude to include.
 min_magnitude = 3.0
 # Maximum number of earthquakes to fetch.
@@ -133,16 +141,22 @@ limit = 10
 [datasource.history]
 # HTTP request timeout in seconds.
 timeout = 10
-# User-Agent header sent with upstream API requests.
-user_agent = "weatherstar (python)"
+# Seconds each HTTP response is cached (success or failure).
+cache_ttl = 300
+# Static HTTP headers merged into every request.
+headers = {User-Agent = "weatherstar (python)"}
+# Static query parameters merged into every request.
+query = {}
 
 [datasource.local_news]
 # HTTP request timeout in seconds.
 timeout = 10
-# User-Agent header sent with upstream API requests.
-user_agent = "weatherstar (python)"
-# Webz.io API key (sent as a Bearer token; empty disables live news).
-api_key = ""
+# Seconds each HTTP response is cached (success or failure).
+cache_ttl = 300
+# Static HTTP headers merged into every request.
+headers = {User-Agent = "weatherstar (python)"}
+# Static query parameters merged into every request.
+query = {}
 # Free-text news search query (e.g. 'News in Carmel, Indiana').
 news_query = ""
 # The number of stories to retrieve from webz (default 10).
@@ -159,35 +173,46 @@ news_day_count = 10
 [datasource.radar]
 # HTTP request timeout in seconds.
 timeout = 10
-# User-Agent header sent with upstream API requests.
-user_agent = "weatherstar (python)"
+# Seconds each HTTP response is cached (success or failure).
+cache_ttl = 300
+# Static HTTP headers merged into every request.
+headers = {User-Agent = "weatherstar (python)"}
+# Static query parameters merged into every request.
+query = {}
 
 [datasource.stocks]
 # HTTP request timeout in seconds.
 timeout = 10
-# User-Agent header sent with upstream API requests.
-user_agent = "weatherstar (python)"
-# Alpha Vantage API key (required; sent with each request).
-# REQUIRED - supply a value for this key.
-# api_key = "value"
-# Query parameter the API key is sent under.
-api_key_param = "apikey"
+# Seconds each HTTP response is cached (success or failure).
+cache_ttl = 300
+# Static HTTP headers merged into every request.
+headers = {User-Agent = "weatherstar (python)"}
+# Static query parameters merged into every request.
+query = {}
 # Comma-separated stock/index symbols to display.
 symbols = "DIA,SPY,QQQ"
 
 [datasource.uv_index]
 # HTTP request timeout in seconds.
 timeout = 10
-# User-Agent header sent with upstream API requests.
-user_agent = "weatherstar (python)"
+# Seconds each HTTP response is cached (success or failure).
+cache_ttl = 300
+# Static HTTP headers merged into every request.
+headers = {User-Agent = "weatherstar (python)"}
+# Static query parameters merged into every request.
+query = {}
 # Number of days of UV index forecast to fetch.
 days = 7
 
 [datasource.weather]
 # HTTP request timeout in seconds.
 timeout = 10
-# User-Agent header sent with upstream API requests.
-user_agent = "weatherstar (python)"
+# Seconds each HTTP response is cached (success or failure).
+cache_ttl = 300
+# Static HTTP headers merged into every request.
+headers = {User-Agent = "weatherstar (python)"}
+# Static query parameters merged into every request.
+query = {}
 
 [media.backgrounds]
 # Directory containing this media's assets (project-relative or absolute).

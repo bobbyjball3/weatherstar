@@ -77,6 +77,29 @@ def test_skeleton_logging_block_defaults():
     assert data["logging"]["console"] is True
 
 
+def test_skeleton_renders_dict_and_secret_defaults():
+    from pydantic import Field
+
+    class _DictPlugin(Plugin):
+        kind = "datasource"
+        name = "dict_plugin"
+        cache_ttl: int = Field(default=300, description="Seconds each response is cached.")
+        headers: dict[str, SecretStr] = Field(
+            default_factory=lambda: {"User-Agent": SecretStr("weatherstar (python)")},
+            description="Static headers.",
+        )
+
+    registry.register("datasource", "dict_plugin", _DictPlugin)
+    try:
+        text = render_skeleton(sequence_name="main", screen_names=[])
+        data = tomllib.loads(text)
+        scope = data["datasource"]["dict_plugin"]
+        assert scope["cache_ttl"] == 300
+        assert scope["headers"] == {"User-Agent": "weatherstar (python)"}
+    finally:
+        registry._plugins.get("datasource", {}).pop("dict_plugin", None)
+
+
 class _DocScreen(Plugin):
     kind = "screen"
     name = "doc_screen"

@@ -10,9 +10,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field
 
-from weatherstar.datasources.base import Datasource, cached, coerce_float
+from weatherstar.datasources.base import Datasource, coerce_float
 from weatherstar.registry import plugin
 
 NOAA_ALERTS_URL = "https://api.weather.gov/alerts/active"
@@ -112,9 +112,8 @@ class NoaaAlertsDatasource(Datasource):
         description="Colon-separated severity order used to sort alerts (most severe first).",
     )
 
-    @cached(60)
     def active(self, lat: float, lon: float) -> list[Alert]:
-        data = self.http_get_json(NOAA_ALERTS_URL, params={"point": f"{lat},{lon}"}, timeout=5)
+        data = self.fetch("GET", NOAA_ALERTS_URL, params={"point": f"{lat},{lon}"}, timeout=5)
         alerts = _parse_alerts(data or {})
         priority = [p.strip() for p in self.severity_priority.split(":") if p.strip()]
         alerts.sort(key=lambda a: priority.index(a.severity) if a.severity in priority else 99)
@@ -135,7 +134,6 @@ class EarthquakesDatasource(Datasource):
     )
     limit: int = Field(default=10, description="Maximum number of earthquakes to fetch.")
 
-    @cached(1800)
     def recent(self, lat: float, lon: float) -> list[Earthquake]:
         params = {
             "format": "geojson",
@@ -143,7 +141,7 @@ class EarthquakesDatasource(Datasource):
             "limit": self.limit,
             "orderby": "time",
         }
-        data = self.http_get_json(USGS_URL, params=params, timeout=10)
+        data = self.fetch("GET", USGS_URL, params=params, timeout=10)
         result: list[Earthquake] = []
         for event in (data or {}).get("features") or []:
             props = event["properties"]
@@ -166,7 +164,6 @@ class UvIndexDatasource(Datasource):
 
     days: int = Field(default=7, description="Number of days of UV index forecast to fetch.")
 
-    @cached(1800)
     def daily(self, lat: float, lon: float) -> list[UvReading]:
         params = {
             "latitude": lat,
@@ -175,7 +172,7 @@ class UvIndexDatasource(Datasource):
             "timezone": "auto",
             "forecast_days": self.days,
         }
-        data = self.http_get_json(OM_UV_URL, params=params, timeout=10)
+        data = self.fetch("GET", OM_UV_URL, params=params, timeout=10)
         daily = (data or {}).get("daily") or {}
         dates = daily.get("time") or []
         values = daily.get("uv_index_max") or []
@@ -201,17 +198,12 @@ class UvIndexDatasource(Datasource):
 class StockMarketDatasource(Datasource):
     """Alpha Vantage stock quotes for a set of symbols.
 
-    ``api_key`` is a required, sensitive config value sent as a query parameter.
+    The API key is supplied through the datasource's ``query`` config, e.g.
+    ``query = { apikey = "..." }``.
     """
 
     name = "stocks"
 
-    api_key: SecretStr = Field(
-        description="Alpha Vantage API key (required; sent with each request)."
-    )
-    api_key_param: str = Field(
-        default="apikey", description="Query parameter the API key is sent under."
-    )
     symbols: str = Field(
         default="DIA,SPY,QQQ", description="Comma-separated stock/index symbols to display."
     )
@@ -231,9 +223,9 @@ class StockMarketDatasource(Datasource):
                 result.append(quote)
         return result
 
-    @cached(300)
     def _quote(self, symbol: str) -> Quote | None:
-        data = self.http_get_json(
+        data = self.fetch(
+            "GET",
             "https://www.alphavantage.co/query",
             params={"function": "GLOBAL_QUOTE", "symbol": symbol},
             timeout=10,
@@ -254,6 +246,3 @@ class StockMarketDatasource(Datasource):
             change_percent=coerce_float(quote.get("10. change percent")),
             direction=direction,
         )
-
-    def __repr__(self) -> str:
-        return f"<StockMarketDatasource name={self.name!r} api_key=***>"

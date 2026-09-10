@@ -1,5 +1,7 @@
 """Tests for the NOAA weather datasource (grid/stations/observations/forecast)."""
 
+import httpx
+
 from weatherstar.datasources.noaa import NoaaWeather
 
 BASE = "https://api.weather.gov"
@@ -37,30 +39,31 @@ def _props() -> dict:
 
 
 def _router(*, point=_point(), stations=_stations(), props=_props(), forecast=None):
-    """Return an http_get_json fake keyed by URL."""
+    """Return an HTTP handler keyed by URL."""
     calls = []
 
-    def fake(url, params=None, timeout=None):
+    def handler(request):
+        url = str(request.url)
         calls.append(url)
         if url == POINT_URL:
-            return point
+            return httpx.Response(200, json=point)
         if url == STATIONS_URL:
-            return stations
+            return httpx.Response(200, json=stations)
         if url == f"{BASE}/stations/{STATION}/observations/latest":
-            return {"properties": props}
+            return httpx.Response(200, json={"properties": props})
         if "forecast/hourly" in url:
-            return {"properties": forecast or {"periods": []}}
+            return httpx.Response(200, json={"properties": forecast or {"periods": []}})
         if "forecast" in url:
-            return {"properties": forecast or {"periods": []}}
-        return None
+            return httpx.Response(200, json={"properties": forecast or {"periods": []}})
+        return httpx.Response(404)
 
-    fake.calls = calls
-    return fake
+    handler.calls = calls
+    return handler
 
 
-def _ds(monkeypatch, fake) -> NoaaWeather:
+def _ds(monkeypatch, handler) -> NoaaWeather:
     ds = NoaaWeather()
-    monkeypatch.setattr(ds, "http_get_json", fake)
+    ds._client = httpx.Client(transport=httpx.MockTransport(handler))
     return ds
 
 
@@ -102,7 +105,9 @@ def test_get_current_returns_and_caches(monkeypatch):
     current = ds.get_current(28.5383, -81.3792)
     assert current.temperature_c == 25.0
     assert current.text_description == "Fair"
-    assert ds.get_current(28.5383, -81.3792) is current
+    ds.get_current(28.5383, -81.3792)
+    # The observation HTTP is served from the transparent fetch cache.
+    assert fake.calls.count(f"{BASE}/stations/{STATION}/observations/latest") == 1
 
 
 def test_get_current_none_when_station_missing(monkeypatch):
@@ -115,35 +120,39 @@ def _two_station_router(first_props, second_props):
     """Router with two stations (KMLB nearest, KXMR next) of given observations."""
     calls = []
 
-    def fake(url, params=None, timeout=None):
+    def handler(request):
+        url = str(request.url)
         calls.append(url)
         if url == POINT_URL:
-            return _point()
+            return httpx.Response(200, json=_point())
         if url == STATIONS_URL:
-            return {
-                "features": [
-                    {
-                        "properties": {
-                            "stationIdentifier": "KMLB",
-                            "name": "Melbourne International Airport",
-                        }
-                    },
-                    {
-                        "properties": {
-                            "stationIdentifier": "KXMR",
-                            "name": "Patrick Space Force Base",
-                        }
-                    },
-                ]
-            }
+            return httpx.Response(
+                200,
+                json={
+                    "features": [
+                        {
+                            "properties": {
+                                "stationIdentifier": "KMLB",
+                                "name": "Melbourne International Airport",
+                            }
+                        },
+                        {
+                            "properties": {
+                                "stationIdentifier": "KXMR",
+                                "name": "Patrick Space Force Base",
+                            }
+                        },
+                    ]
+                },
+            )
         if url == f"{BASE}/stations/KMLB/observations/latest":
-            return {"properties": first_props}
+            return httpx.Response(200, json={"properties": first_props})
         if url == f"{BASE}/stations/KXMR/observations/latest":
-            return {"properties": second_props}
-        return None
+            return httpx.Response(200, json={"properties": second_props})
+        return httpx.Response(404)
 
-    fake.calls = calls
-    return fake
+    handler.calls = calls
+    return handler
 
 
 def test_get_current_skips_sparse_station_for_fuller_one(monkeypatch):
@@ -219,35 +228,43 @@ def _region_router(*, props_per_station=None, forecast_per_station=None):
     """Router that serves regional observation/forecast endpoints for two stations."""
     calls = []
 
-    def fake(url, params=None, timeout=None):
+    def handler(request):
+        url = str(request.url)
         calls.append(url)
         if url == POINT_URL:
-            return _point()
+            return httpx.Response(200, json=_point())
         if url == STATIONS_URL:
-            return {
-                "features": [
-                    {
-                        "properties": {
-                            "stationIdentifier": "KMLB",
-                            "name": "Melbourne International Airport",
-                        }
-                    },
-                    {
-                        "properties": {
-                            "stationIdentifier": "KXMR",
-                            "name": "Patrick Space Force Base",
-                        }
-                    },
-                ]
-            }
+            return httpx.Response(
+                200,
+                json={
+                    "features": [
+                        {
+                            "properties": {
+                                "stationIdentifier": "KMLB",
+                                "name": "Melbourne International Airport",
+                            }
+                        },
+                        {
+                            "properties": {
+                                "stationIdentifier": "KXMR",
+                                "name": "Patrick Space Force Base",
+                            }
+                        },
+                    ]
+                },
+            )
         if url == f"{BASE}/stations/KMLB":
-            return {"properties": {"forecast": f"{BASE}/gridpoints/MLB/45,32/forecast"}}
+            return httpx.Response(
+                200, json={"properties": {"forecast": f"{BASE}/gridpoints/MLB/45,32/forecast"}}
+            )
         if url == f"{BASE}/stations/KXMR":
-            return {"properties": {"forecast": f"{BASE}/gridpoints/MLB/44,32/forecast"}}
+            return httpx.Response(
+                200, json={"properties": {"forecast": f"{BASE}/gridpoints/MLB/44,32/forecast"}}
+            )
         if url == f"{BASE}/stations/KMLB/observations/latest":
-            return {"properties": props_per_station or _props()}
+            return httpx.Response(200, json={"properties": props_per_station or _props()})
         if url == f"{BASE}/stations/KXMR/observations/latest":
-            return {"properties": _props()}
+            return httpx.Response(200, json={"properties": _props()})
         if "gridpoints" in url:
             props = forecast_per_station or {
                 "periods": [
@@ -260,11 +277,11 @@ def _region_router(*, props_per_station=None, forecast_per_station=None):
                     {"name": "Tonight", "isDaytime": False, "temperature": 72},
                 ]
             }
-            return {"properties": props}
-        return None
+            return httpx.Response(200, json={"properties": props})
+        return httpx.Response(404)
 
-    fake.calls = calls
-    return fake
+    handler.calls = calls
+    return handler
 
 
 def test_get_observations_multiple_stations(monkeypatch):
@@ -299,46 +316,58 @@ def test_regional_forecast_ignores_zone_text_forecast_urls(monkeypatch):
     of fetching that zone URL (which 400s and spams warnings)."""
     calls = []
 
-    def fake(url, params=None, timeout=None):
+    def fake(request):
+        url = str(request.url)
         calls.append(url)
         if url == POINT_URL:
-            return _point()
+            return httpx.Response(200, json=_point())
         if url == STATIONS_URL:
-            return {
-                "features": [
-                    {
-                        "properties": {
-                            "stationIdentifier": "KMLB",
-                            "name": "Melbourne International Airport",
-                        }
-                    }
-                ]
-            }
-        if url == f"{BASE}/stations/KMLB":
-            return {
-                "geometry": {"type": "Point", "coordinates": [-80.6, 28.1]},
-                "properties": {
-                    # Some stations advertise their *zone* here; it has no periods.
-                    "forecast": f"{BASE}/zones/forecast/INZ037",
-                },
-            }
-        if url == f"{BASE}/points/28.1000,-80.6000":
-            return {"properties": {"forecast": f"{BASE}/gridpoints/MLB/45,32/forecast"}}
-        if "gridpoints" in url:
-            return {
-                "properties": {
-                    "periods": [
+            return httpx.Response(
+                200,
+                json={
+                    "features": [
                         {
-                            "name": "Today",
-                            "isDaytime": True,
-                            "temperature": 90,
-                            "shortForecast": "Sunny",
-                        },
-                        {"name": "Tonight", "isDaytime": False, "temperature": 70},
+                            "properties": {
+                                "stationIdentifier": "KMLB",
+                                "name": "Melbourne International Airport",
+                            }
+                        }
                     ]
-                }
-            }
-        return None
+                },
+            )
+        if url == f"{BASE}/stations/KMLB":
+            return httpx.Response(
+                200,
+                json={
+                    "geometry": {"type": "Point", "coordinates": [-80.6, 28.1]},
+                    "properties": {
+                        # Some stations advertise their *zone* here; it has no periods.
+                        "forecast": f"{BASE}/zones/forecast/INZ037",
+                    },
+                },
+            )
+        if url == f"{BASE}/points/28.1000,-80.6000":
+            return httpx.Response(
+                200, json={"properties": {"forecast": f"{BASE}/gridpoints/MLB/45,32/forecast"}}
+            )
+        if "gridpoints" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "properties": {
+                        "periods": [
+                            {
+                                "name": "Today",
+                                "isDaytime": True,
+                                "temperature": 90,
+                                "shortForecast": "Sunny",
+                            },
+                            {"name": "Tonight", "isDaytime": False, "temperature": 70},
+                        ]
+                    }
+                },
+            )
+        return httpx.Response(404)
 
     ds = _ds(monkeypatch, fake)
     rows = ds.get_regional_forecast(28.5383, -81.3792)

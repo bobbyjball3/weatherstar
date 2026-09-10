@@ -12,11 +12,11 @@ from datetime import date, timedelta
 from typing import Any
 
 import pygame
-from pydantic import PrivateAttr
 
 from weatherstar import render
 from weatherstar.components.base import ComponentSpec
 from weatherstar.datasources.noaa import ForecastPeriod
+from weatherstar.plugin import memoize
 from weatherstar.registry import plugin
 from weatherstar.screens.base import Screen
 from weatherstar.themes import LayoutVariant
@@ -58,8 +58,6 @@ class LocalForecastScreen(Screen):
         ),
         ComponentSpec(component="clock"),
     )
-
-    _panel_cache: dict[Any, tuple] = PrivateAttr(default_factory=dict)
 
     def compose_4000(self, surface: pygame.Surface, ctx: Any, dt: float) -> None:
         periods: list[ForecastPeriod] = self.weather_data(ctx, "get_forecast") or []
@@ -204,12 +202,11 @@ class LocalForecastScreen(Screen):
             image = (ctx.assets.get("backgrounds") or {}).get("2")
         except Exception:
             image = None
-        key = id(image) if image is not None else None
-        cached = self._panel_cache.get(key)
-        if cached is None:
-            cached = self._detect_panels(image) or self._default_panels()
-            self._panel_cache[key] = cached
-        return cached
+        return self._panels_for_image(image)
+
+    @memoize
+    def _panels_for_image(self, image: Any) -> tuple:
+        return self._detect_panels(image) or self._default_panels()
 
     @staticmethod
     def _default_panels() -> tuple:

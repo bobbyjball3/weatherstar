@@ -45,9 +45,10 @@ The CI runs `task check` and `task coverage` — a change is not done until
 - Tests run **headless**: `tests/conftest.py` forces `SDL_VIDEODRIVER=dummy` /
   `SDL_AUDIODRIVER=dummy` before pygame imports. Use the `pygame_env`, `screen`
   (640×480 surface), `display`, and `fonts` fixtures.
-- **No network in tests.** Unit-test datasources by `monkeypatch.setattr(ds,
-  "http_get_json", fake)`; never hit real APIs. Screens that would fetch (e.g.
-  radar) are tested by swapping the whole data registry for stubs.
+- **No network in tests.** Unit-test datasources by installing an
+  `httpx.MockTransport` (or `monkeypatch.setattr(ds, "fetch", fake)`); never
+  hit real APIs. Screens that would fetch (e.g. radar) are tested by swapping
+  the whole data registry for stubs.
 - Two screen-testing styles:
   - Empty/no-data stubs (the "NO DATA" path): `tests/test_integration_screens.py`.
   - **Populated-data** stubs that drive the real rendering branches:
@@ -73,7 +74,8 @@ config.toml -> AppConfig (config_file.py) -> Builder -> AppContext/DataRegistry
 ```
 
 `src/weatherstar/`:
-- `plugin.py` — `Plugin(BaseModel)`; config helpers.
+- `plugin.py` — `Plugin(BaseModel)`; config helpers; the base-vended `@memoize`
+  decorator (per-instance, optional `ttl`) so plugins never hold cache state.
 - `registry.py` — `@plugin`, `PluginRegistry`, built-in + entry-point discovery.
 - `renderer.py` — `Renderer` mixin: concrete font/color/data/blit/wrap helpers
   shared by both Screens and Components.
@@ -121,7 +123,7 @@ These are load-bearing — violating them raises at class definition or runtime:
    attribute that is not a field. Runtime state must be declared:
    `_scroll: float = PrivateAttr(default=200.0)` (leading underscore +
    `PrivateAttr`), or `default_factory` for mutable defaults. Do not write
-   `self.cache = {}` unless `_cache` is a declared `PrivateAttr`.
+   `self.buffer = {}` unless `_buffer` is a declared `PrivateAttr`.
 4. **Build plugins with `cls.model_validate(scope)` / `Plugin.from_config`.**
    Do not hand-instantiate + assign fields. `model_validate` bypasses any custom
    `__init__`, so init-time state belongs in `PrivateAttr` defaults or

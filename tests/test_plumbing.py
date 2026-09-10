@@ -1,6 +1,7 @@
 """Tests for remaining plumbing: feeds extras, config_file, sequence, context,
 render helpers, fonts/backgrounds media, and CLI edge cases."""
 
+import httpx
 import pygame
 import pytest
 
@@ -12,12 +13,12 @@ from weatherstar.datasources.feeds import (
     UvIndexDatasource,
 )
 
-# ---------------------------------------------------------------------------
-# Feeds: cache hits + severity sorting
-# ---------------------------------------------------------------------------
+
+def _mock_client(handler) -> httpx.Client:
+    return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-def test_alerts_active_sorts_by_severity_and_caches(monkeypatch):
+def test_alerts_active_sorts_by_severity_and_caches():
     ds = NoaaAlertsDatasource.model_validate({"severity_priority": "Extreme:Severe:Moderate"})
     payload = {
         "features": [
@@ -27,17 +28,22 @@ def test_alerts_active_sorts_by_severity_and_caches(monkeypatch):
         ]
     }
     calls = []
-    monkeypatch.setattr(ds, "http_get_json", lambda *a, **k: calls.append(1) or payload)
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(200, json=payload)
+
+    ds._client = _mock_client(handler)
     alerts = ds.active(10.0, 20.0)
     assert [a.event for a in alerts] == ["B", "A"]
-    assert ds.active(10.0, 20.0) is alerts  # served from cache
+    ds.active(10.0, 20.0)  # served from the transparent fetch cache
     assert len(calls) == 1
 
 
-def test_feeds_cache_second_calls(monkeypatch):
+def test_feeds_cache_second_calls():
     quakes = EarthquakesDatasource()
     uv = UvIndexDatasource()
-    stocks = StockMarketDatasource.model_validate({"api_key": "k", "symbols": "DIA,SPY"})
+    stocks = StockMarketDatasource.model_validate({"query": {"apikey": "k"}, "symbols": "DIA,SPY"})
 
     quake_payload = {
         "features": [
@@ -53,31 +59,36 @@ def test_feeds_cache_second_calls(monkeypatch):
             "10. change percent": "0.3%",
         }
     }
+    calls = {"quakes": 0, "uv": 0, "stocks": 0}
 
-    quake_calls, uv_calls, stock_calls = [], [], []
+    def handler(request):
+        url = str(request.url)
+        if "earthquake.usgs.gov" in url:
+            calls["quakes"] += 1
+            return httpx.Response(200, json=quake_payload)
+        if "open-meteo.com" in url:
+            calls["uv"] += 1
+            return httpx.Response(200, json=uv_payload)
+        if "alphavantage.co" in url:
+            calls["stocks"] += 1
+            return httpx.Response(200, json=stock_payload)
+        return httpx.Response(404)
 
-    monkeypatch.setattr(
-        quakes,
-        "http_get_json",
-        lambda *a, **k: quake_calls.append(1) or quake_payload,
-    )
-    monkeypatch.setattr(uv, "http_get_json", lambda *a, **k: uv_calls.append(1) or uv_payload)
-    monkeypatch.setattr(
-        stocks, "http_get_json", lambda *a, **k: stock_calls.append(1) or stock_payload
-    )
+    for ds in (quakes, uv, stocks):
+        ds._client = _mock_client(handler)
 
     quakes.recent(0.0, 0.0)
     quakes.recent(0.0, 0.0)
-    assert len(quake_calls) == 1
+    assert calls["quakes"] == 1
 
     uv.daily(0.0, 0.0)
     uv.daily(0.0, 0.0)
-    assert len(uv_calls) == 1
+    assert calls["uv"] == 1
 
     stocks.quotes()
     stocks.quotes()
     # Two symbols => one HTTP fetch per symbol, cached on the second pass.
-    assert len(stock_calls) == 2
+    assert calls["stocks"] == 2
 
 
 # ---------------------------------------------------------------------------

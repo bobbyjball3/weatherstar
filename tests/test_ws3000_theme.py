@@ -70,7 +70,7 @@ lat = 28.5383
 lon = -81.3792
 description = "Orlando, FL"
 [datasource.stocks]
-api_key = "test-key"
+query = {{ apikey = "test-key" }}
 [sequences.all]
 pause = 0.001
 slides = [

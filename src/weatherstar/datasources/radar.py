@@ -2,9 +2,9 @@
 
 Mirrors the legacy behaviour: fetch the CONUS radar stills from
 ``radar.weather.gov`` (newest..oldest), crop each to a ~1/5 window centred on
-the configured coordinates, and rescale to the radar box.  Fetching is TTL
-cached (empty results are cached too, so an offline box only retries every TTL
-seconds).  All HTTP goes through the base Datasource helpers.
+the configured coordinates, and rescale to the radar box.  The base
+:meth:`~weatherstar.datasources.base.Datasource.fetch` caches responses
+(failures included), so an offline box only retries every ``cache_ttl`` seconds.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import io
 
 import pygame
 
-from weatherstar.datasources.base import Datasource, cached
+from weatherstar.datasources.base import Datasource
 from weatherstar.registry import plugin
 
 # Candidate image templates, newest first ordering handled per-frame below.
@@ -30,7 +30,6 @@ _LAT_SOUTH, _LAT_NORTH = 24.0, 50.0
 
 _CROP_TARGET = (500, 300)
 _FRAME_COUNT = 6
-_FRAME_TTL = 90
 
 
 @plugin
@@ -64,8 +63,12 @@ class NoaaRadar(Datasource):
 
     # -- fetching -------------------------------------------------------------
 
+    def parse_response(self, response) -> bytes | None:
+        """Radar stills are images, so read the body as raw bytes."""
+        return self.response_bytes(response)
+
     def _fetch_bytes(self, url: str) -> bytes | None:
-        data = self.http_get_bytes(url)
+        data = self.fetch("GET", url)
         return data if data and len(data) > 1000 else None
 
     @staticmethod
@@ -90,7 +93,6 @@ class NoaaRadar(Datasource):
                         self._log.debug("radar_decode_failed", url=url, error=str(exc))
         return frames
 
-    @cached(_FRAME_TTL)
     def frames(self, lat: float, lon: float) -> list[pygame.Surface]:
         """Return the radar frames, cropped to the regional view (empty offline)."""
         return self._fetch_frames(lat, lon)

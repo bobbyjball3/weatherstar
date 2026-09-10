@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from weatherstar import registry
 from weatherstar.config_file import (
@@ -35,6 +35,8 @@ _TOP_LEVEL_SECTIONS: tuple[tuple[str, type[BaseModel], dict[str, Any]], ...] = (
 
 
 def _toml_repr(value: Any) -> str:
+    if isinstance(value, SecretStr):
+        value = value.get_secret_value()
     if value is None:
         return '""'
     if isinstance(value, bool):
@@ -70,7 +72,8 @@ def _render_model_section(
         if key in examples:
             parts.append(f"# {key} = {_toml_repr(examples[key])}")
         else:
-            parts.append(f"{key} = {_toml_repr(field.default)}")
+            default = field.get_default(call_default_factory=True)
+            parts.append(f"{key} = {_toml_repr(default)}")
     parts.append("")
 
 
@@ -83,7 +86,8 @@ def _render_plugin_scope_lines(kind: str, name: str, cls: type) -> list[str]:
             lines.append("# REQUIRED - supply a value for this key.")
             lines.append(f'# {key} = "value"')
         else:
-            lines.append(f"{key} = {_toml_repr(field.default)}")
+            default = field.get_default(call_default_factory=True)
+            lines.append(f"{key} = {_toml_repr(default)}")
     lines.append("")
     return lines
 

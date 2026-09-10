@@ -14,14 +14,46 @@ never become fields.
 
 from __future__ import annotations
 
+import functools
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, SecretStr
+from cachetools import TTLCache
+from cachetools.keys import hashkey
+from pydantic import BaseModel, ConfigDict, PrivateAttr, SecretStr
 
 from weatherstar.errors import InvalidConfiguration
 from weatherstar.logging_setup import get_logger
 
 _log = get_logger("weatherstar.plugin")
+
+
+def memoize(fn: Any = None, *, ttl: int | None = None) -> Any:
+    """Memoize a plugin method's result per instance.
+
+    Caching is a feature vended by the base class: a concrete plugin just
+    decorates a method and never touches cache state.  The cache lives on the
+    instance and is keyed by the method and its arguments.  ``ttl`` (seconds) is
+    optional; without it the result is kept for the instance's lifetime.
+    ``None`` results are cached too.
+    """
+
+    def decorator(func: Any) -> Any:
+        @functools.wraps(func)
+        def wrapper(self: Plugin, *args: Any, **kwargs: Any) -> Any:
+            cache = self._memo_for(ttl)
+            key = hashkey(func.__qualname__, *args, **kwargs)
+            try:
+                return cache[key]
+            except KeyError:
+                value = func(self, *args, **kwargs)
+                cache[key] = value
+                return value
+
+        return wrapper
+
+    if fn is not None:
+        return decorator(fn)
+    return decorator
 
 
 class Plugin(BaseModel):
@@ -40,6 +72,17 @@ class Plugin(BaseModel):
     kind: ClassVar[str | None] = None
     #: Stable identifier referenced from configuration and sequences.
     name: ClassVar[str | None] = None
+
+    #: Per-instance memo caches used by the ``@memoize`` decorator (not config).
+    _memo: dict[Any, Any] = PrivateAttr(default_factory=dict)
+
+    def _memo_for(self, ttl: int | None) -> Any:
+        """Return this instance's memo cache for ``ttl`` (created on first use)."""
+        cache = self._memo.get(ttl)
+        if cache is None:
+            cache = TTLCache(maxsize=256, ttl=ttl) if ttl else {}
+            self._memo[ttl] = cache
+        return cache
 
     # -- Configuration ---------------------------------------------------
 

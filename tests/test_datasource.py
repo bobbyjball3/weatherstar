@@ -1,162 +1,122 @@
-"""Tests for the Datasource base: auth, query params, HTTP, TTL cache."""
+"""Tests for the Datasource base: headers/query, HTTP, and the fetch cache."""
 
-import requests
-from pydantic import PrivateAttr, SecretStr
+import httpx
+from pydantic import SecretStr
 
-from weatherstar.datasources.base import Datasource, cached
-
-
-class AuthDS(Datasource):
-    api_key: SecretStr | None = None
-    api_key_param: str | None = None
+from weatherstar.datasources.base import Datasource
 
 
-class CountingDS(Datasource):
-    _calls: int = PrivateAttr(default=0)
-
-    @cached(60)
-    def value(self, x):
-        self._calls += 1
-        return x * 2
-
-    @cached(60)
-    def maybe(self, x):
-        self._calls += 1
-        return None
+class PlainDS(Datasource):
+    pass
 
 
-class CollidingDS(Datasource):
-    """Two methods with the same TTL and args must not share a cache entry."""
+class BytesDS(Datasource):
+    """Overrides the response interface to read raw bytes (radar-style)."""
 
-    _dict_calls: int = PrivateAttr(default=0)
-    _list_calls: int = PrivateAttr(default=0)
-
-    @cached(60)
-    def as_dict(self, x):
-        self._dict_calls += 1
-        return {"kind": "dict"}
-
-    @cached(60)
-    def as_list(self, x):
-        self._list_calls += 1
-        return ["list"]
+    def parse_response(self, response):
+        return self.response_bytes(response)
 
 
-def _auth(**values) -> AuthDS:
-    return AuthDS.model_validate(values)
+def _client(handler) -> httpx.Client:
+    return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-class _Resp:
-    def __init__(self, payload, status=200):
-        self._payload = payload
-        self.status_code = status
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise requests.HTTPError(f"bad status {self.status_code}")
-
-    def json(self):
-        return self._payload
+def test_unwrap_reveals_secret_values():
+    ds = PlainDS.model_validate({"headers": {"X-Api": "s3cret"}})
+    assert isinstance(ds.headers["X-Api"], SecretStr)
+    assert ds._unwrap(ds.headers) == {"X-Api": "s3cret"}
 
 
-class _Sess:
-    def __init__(self, response):
-        self.headers = {}
-        self.auth = None
-        self.response = response
-        self.calls = []
-
-    def get(self, url, params=None, timeout=None):
-        self.calls.append((url, params, timeout))
-        return self.response
-
-    def close(self):
-        self.response = None
-
-
-def _make_session(ds, response=None):
-    sess = _Sess(response or _Resp({"ok": True}))
-    ds._session_for = lambda: sess  # noqa: B023
-    return sess
+def test_build_request_merges_headers_and_query():
+    ds = PlainDS.model_validate(
+        {
+            "headers": {"X-Api": "s3cret", "User-Agent": "weatherstar (python)"},
+            "query": {"apikey": "abc"},
+        }
+    )
+    request = ds.build_request("GET", "https://example.test/x", params={"a": "1"})
+    assert request.headers["x-api"] == "s3cret"
+    assert request.headers["user-agent"] == "weatherstar (python)"
+    url = str(request.url)
+    assert "apikey=abc" in url
+    assert "a=1" in url
 
 
-def test_query_params_inject_api_key():
-    ds = _auth(api_key="k", api_key_param="apikey")
-    params = ds._query_params({"function": "GLOBAL_QUOTE"})
-    assert params == {"function": "GLOBAL_QUOTE", "apikey": "k"}
+def test_fetch_returns_none_for_bad_url():
+    ds = PlainDS()
+    assert ds.fetch("GET", "not-a-url") is None
 
 
-def test_query_params_passthrough_without_key_fields():
-    ds = AuthDS()
-    assert ds._query_params({"a": 1}) == {"a": 1}
-    assert ds._query_params(None) is None
+def test_fetch_caches_by_request():
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        return httpx.Response(200, json={"ok": True})
+
+    ds = PlainDS()
+    ds._client = _client(handler)
+    first = ds.fetch("GET", "https://example.test/x", params={"a": "1"})
+    second = ds.fetch("GET", "https://example.test/x", params={"a": "1"})
+    assert first == {"ok": True}
+    assert second == {"ok": True}
+    assert len(calls) == 1
+    # Distinct params -> distinct cache entry.
+    ds.fetch("GET", "https://example.test/x", params={"a": "2"})
+    assert len(calls) == 2
 
 
-def test_http_get_json_success_and_params(monkeypatch):
-    ds = AuthDS()
-    sess = _make_session(ds, _Resp({"ok": 1}))
-    result = ds.http_get_json("https://x", params={"q": 1}, timeout=5)
-    assert result == {"ok": 1}
-    assert sess.calls == [("https://x", {"q": 1}, 5)]
+def test_fetch_negative_caches_failures():
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(500, json={"error": "boom"})
+
+    ds = PlainDS()
+    ds._client = _client(handler)
+    assert ds.fetch("GET", "https://example.test/x") is None
+    assert ds.fetch("GET", "https://example.test/x") is None
+    assert len(calls) == 1  # failure cached for cache_ttl
 
 
-def test_http_get_json_http_error_returns_none(monkeypatch):
-    ds = AuthDS()
-    sess = _make_session(ds, _Resp(None, status=500))
-    assert ds.http_get_json("https://x") is None
-    assert len(sess.calls) == 1
+def test_fetch_returns_none_on_bad_json():
+    ds = PlainDS()
+    ds._client = _client(lambda request: httpx.Response(200, text="not json"))
+    assert ds.fetch("GET", "https://example.test/x") is None
 
 
-def test_http_get_json_invalid_json_returns_none(monkeypatch):
-    class BadJSON(_Resp):
-        def json(self):
-            raise ValueError("bad json")
-
-    ds = AuthDS()
-    _make_session(ds, BadJSON(None))
-    assert ds.http_get_json("https://x") is None
+def test_parse_response_can_return_bytes():
+    ds = BytesDS()
+    ds._client = _client(lambda request: httpx.Response(200, content=b"GIF89a"))
+    assert ds.fetch("GET", "https://example.test/x") == b"GIF89a"
 
 
-def test_cached_decorator_caches_by_args():
-    ds = CountingDS()
-    assert ds.value(2) == 4
-    assert ds.value(2) == 4  # cache hit -> no second call
-    assert ds._calls == 1
-    assert ds.value(3) == 6  # distinct args -> miss
-    assert ds._calls == 2
+def test_fetch_posts_json_body():
+    seen = {}
+
+    def handler(request):
+        seen["method"] = request.method
+        seen["body"] = request.content
+        return httpx.Response(200, json={"results": []})
+
+    ds = PlainDS()
+    ds._client = _client(handler)
+    ds.fetch("POST", "https://example.test/x", json={"query": "hi"})
+    assert seen["method"] == "POST"
+    assert b"hi" in seen["body"]
 
 
-def test_cached_decorator_does_not_pin_none():
-    ds = CountingDS()
-    assert ds.maybe(1) is None
-    assert ds.maybe(1) is None  # None not cached -> retried
-    assert ds._calls == 2
+def test_cache_ttl_config_controls_cache():
+    ds = PlainDS.model_validate({"cache_ttl": 42})
+    cache = ds._cache_for()
+    assert cache.ttl == 42
+    assert cache is ds._cache_for()
+    assert PlainDS()._cache_for() is not cache
 
 
-def test_cached_decorator_uses_a_ttl_cache_per_instance():
-    from cachetools import TTLCache
-
-    ds = CountingDS()
-    cache = ds._cache_for(60)
-    assert isinstance(cache, TTLCache)
-    assert cache.ttl == 60
-    assert cache is ds._cache_for(60)
-    assert CountingDS()._cache_for(60) is not cache
-
-
-def test_cached_decorator_keys_include_the_method():
-    ds = CollidingDS()
-    assert ds.as_dict(1) == {"kind": "dict"}
-    assert ds.as_list(1) == ["list"]  # same ttl+args must not reuse the dict
-    assert ds.as_dict(1) == {"kind": "dict"}
-    assert ds._dict_calls == 1
-    assert ds._list_calls == 1
-
-
-def test_close_clears_session():
-    ds = AuthDS()
-    sess = _make_session(ds)
-    assert ds._session is None  # session is created lazily inside _session_for
-    ds._session = sess
+def test_close_clears_client():
+    ds = PlainDS()
+    ds._client = _client(lambda request: httpx.Response(200))
     ds.close()
-    assert ds._session is None
+    assert ds._client is None

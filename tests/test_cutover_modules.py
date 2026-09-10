@@ -17,7 +17,7 @@ _DAILY = {
 
 def test_history_temperature_returns_most_recent_first(monkeypatch):
     ds = HistoryDatasource()
-    monkeypatch.setattr(ds, "http_get_json", lambda *a, **k: {"daily": dict(_DAILY)})
+    monkeypatch.setattr(ds, "fetch", lambda *a, **k: {"daily": dict(_DAILY)})
     rows = ds.temperature(28.5, -81.4)
     assert [(r.date, r.high, r.low) for r in rows] == [
         ("2026-09-03", 92.0, 72.0),
@@ -28,7 +28,7 @@ def test_history_temperature_returns_most_recent_first(monkeypatch):
 
 def test_history_precipitation_most_recent_first(monkeypatch):
     ds = HistoryDatasource()
-    monkeypatch.setattr(ds, "http_get_json", lambda *a, **k: {"daily": dict(_DAILY)})
+    monkeypatch.setattr(ds, "fetch", lambda *a, **k: {"daily": dict(_DAILY)})
     rows = ds.precipitation(28.5, -81.4)
     assert [(r.date, r.inches) for r in rows] == [
         ("2026-09-03", 0.0),
@@ -39,7 +39,7 @@ def test_history_precipitation_most_recent_first(monkeypatch):
 
 def test_history_refresh_false_when_empty(monkeypatch):
     ds = HistoryDatasource()
-    monkeypatch.setattr(ds, "http_get_json", lambda *a, **k: {"daily": {}})
+    monkeypatch.setattr(ds, "fetch", lambda *a, **k: {"daily": {}})
     assert ds.refresh(1.0, 2.0) is False
 
 

@@ -1,10 +1,10 @@
 """Tests for the Plugin base: Pydantic fields, binding, repr masking."""
 
 import pytest
-from pydantic import SecretStr
+from pydantic import PrivateAttr, SecretStr
 
 from weatherstar import InvalidConfiguration
-from weatherstar.plugin import Plugin
+from weatherstar.plugin import Plugin, memoize
 
 
 class Widget(Plugin):
@@ -81,3 +81,38 @@ def test_invalid_value_type_raises_invalid_configuration():
     with pytest.raises(InvalidConfiguration) as excinfo:
         Widget.from_config({"timeout": "not-a-number"})
     assert "widget.sample" in str(excinfo.value)
+
+
+class MemoWidget(Plugin):
+    kind = "widget"
+    name = "memo"
+    _calls: int = PrivateAttr(default=0)
+
+    @memoize
+    def square(self, x):
+        self._calls += 1
+        return x * x
+
+    @memoize(ttl=60)
+    def negate(self, x):
+        self._calls += 1
+        return -x
+
+
+def test_memoize_caches_by_method_and_args():
+    widget = MemoWidget()
+    assert widget.square(3) == 9
+    assert widget.square(3) == 9
+    assert widget._calls == 1
+    assert widget.square(4) == 16
+    assert widget._calls == 2
+
+
+def test_memoize_ttl_cache_is_per_instance():
+    widget = MemoWidget()
+    assert widget.negate(2) == -2
+    assert widget.negate(2) == -2
+    assert widget._calls == 1
+    cache = widget._memo_for(60)
+    assert cache.ttl == 60
+    assert MemoWidget()._memo_for(60) is not cache

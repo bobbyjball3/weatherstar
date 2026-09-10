@@ -48,6 +48,11 @@ Both `Screen` and `Component` inherit `Renderer` (in `renderer.py`), a mixin of
 `blit_text`, `wrap`, `centered`, `format_date`, …) so renderers share one
 implementation instead of re-declaring `_font`/`_color` helpers per file.
 
+Caching is a feature vended by the base: `Plugin` provides the `@memoize`
+decorator (per-instance, keyed by method and arguments, optional `ttl`), and
+`Datasource.fetch` caches HTTP responses for `cache_ttl` seconds. Concrete
+plugins never hold cache state or touch a cache library.
+
 ### Screens
 
 `Screen` (in `screens/base.py`) subclasses declare metadata as `ClassVar`s —
@@ -84,19 +89,26 @@ through the context.
 
 ### Datasources
 
-`Datasource` (in `datasources/base.py`) is a `Plugin` with common config
-(`timeout`, `user_agent`) and HTTP plumbing shared by all feeds:
+`Datasource` (in `datasources/base.py`) is a `Plugin` that owns every
+cross-cutting HTTP concern so a datasource only declares config and implements
+two interface methods:
 
-- a `requests.Session` built lazily per instance with the configured
-  `User-Agent` and any auth derived from sensitive fields (`_session_for`);
-- `http_get_json(...)` / `http_get_bytes(...)` / `http_post_json(...)` with
-  timeout, status logging and graceful `None` on failure;
-- a per-instance TTL cache applied with the `@cached(ttl)` decorator, so a
-  fetch method is written as a plain API call and the cache stays invisible.
+- `build_request(method, url, params=..., json=...)` — builds an
+  `httpx.Request`, merging the configured `headers` / `query` (interface
+  method 1);
+- `parse_response(response)` — decodes the `httpx.Response` (interface method
+  2; the default reads JSON, radar overrides it to read bytes).
 
-Auth fields typed as Pydantic `SecretStr` (e.g. `stocks.api_key`) are unwrapped
-only at the point of use (`get_secret_value()`), and query-param style keys
-(`api_key_param`) are injected per request via `_query_params`.
+The `fetch(...)` driver wires them together: build → send → parse, with
+timeout, status logging, and graceful `None` on transport/HTTP/decode failure.
+A lazily created `httpx.Client` carries the configured headers/query and
+timeout. `fetch` also caches each result — success *or* failure — in a
+per-instance TTL cache for `cache_ttl` seconds, so datasources never touch
+cache state.
+
+Auth and headers are declared as config: `headers` / `query` are
+`dict[str, SecretStr]`, unwrapped only at the HTTP boundary
+(`get_secret_value()`), so nothing sensitive leaks into `repr` or logs.
 
 ## Registry and discovery
 
@@ -194,8 +206,9 @@ logs.
 
 `tests/conftest.py` forces SDL dummy drivers before pygame imports, so the whole
 suite (and `--validate`) runs on CI machines without a display. External APIs
-are never hit in tests: datasource tests monkeypatch `http_get_json`, and the
-integration test swaps the real `DataRegistry` for benign stubs.
+are never hit in tests: datasource tests install an `httpx.MockTransport` (or
+monkeypatch `fetch`), and the integration test swaps the real `DataRegistry`
+for benign stubs.
 
 ## Key design decisions
 

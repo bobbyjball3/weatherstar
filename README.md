@@ -60,8 +60,9 @@ providers rather than anything we host:
 
 ### Built on
 
-pygame, pydantic, `ephem` (for the almanac's sun and moon math), structlog and
-requests — the unglamorous foundations everything above renders through.
+pygame, pydantic, `ephem` (for the almanac's sun and moon math), structlog,
+httpx and cachetools — the unglamorous foundations everything above renders
+through.
 
 None of these projects or providers endorse this one. If anything here is
 wrong, it is my error, not theirs; if anything looks right, it is because of

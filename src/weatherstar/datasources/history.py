@@ -13,12 +13,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-from weatherstar.datasources.base import Datasource, cached, coerce_float
+from weatherstar.datasources.base import Datasource, coerce_float
 from weatherstar.registry import plugin
 
 _HISTORY_URL = "https://api.open-meteo.com/v1/forecast"
 _DAILY = "temperature_2m_max,temperature_2m_min,precipitation_sum"
-_CACHE_TTL = 3600
 
 
 class TemperatureRow(BaseModel):
@@ -50,9 +49,9 @@ class HistoryDatasource(Datasource):
 
     # -- fetching ------------------------------------------------------------
 
-    @cached(_CACHE_TTL)
     def _daily(self, lat: float, lon: float) -> dict[str, Any]:
-        data = self.http_get_json(
+        data = self.fetch(
+            "GET",
             _HISTORY_URL,
             params={
                 "latitude": lat,
