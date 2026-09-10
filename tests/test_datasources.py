@@ -1,5 +1,7 @@
 """Tests for datasource plugins (parsing, caching, masking, graceful failure)."""
 
+import httpx
+
 from weatherstar.datasources.feeds import (
     Alert,
     EarthquakesDatasource,
@@ -211,6 +213,26 @@ def test_local_news_graceful_when_api_fails(monkeypatch):
     ds = _news()
     monkeypatch.setattr(ds, "fetch", lambda *a, **k: None)
     assert ds.headlines(28.5, -81.4) == []
+
+
+def test_local_news_headlines_request_is_cache_stable():
+    """Repeated renders must reuse the cached POST, not re-fetch every frame.
+
+    Regression: ``published_from`` used to embed the current time, so the
+    request body (and cache key) changed every second and the screen re-POSTed
+    while scrolling.
+    """
+    ds = _news()
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(200, json={"results": [{"article": {"title": "T1", "url": "u1"}}]})
+
+    ds._client = httpx.Client(transport=httpx.MockTransport(handler))
+    assert [h.title for h in ds.headlines(28.5, -81.4)] == ["T1"]
+    assert [h.title for h in ds.headlines(28.5, -81.4)] == ["T1"]
+    assert len(calls) == 1
 
 
 def test_local_news_bearer_auth_from_headers_config():

@@ -69,7 +69,11 @@ class LocalNewsDatasource(Datasource):
         if not self.news_query:
             return []
 
-        published_from = datetime.now(timezone.utc) - timedelta(days=self.news_day_count)
+        # Anchor the window to midnight UTC so the request body (and therefore
+        # the fetch cache key) is stable across renders; a per-second timestamp
+        # would otherwise defeat caching and re-POST every frame.
+        midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        published_from = midnight - timedelta(days=self.news_day_count)
         body = {
             "query": self.news_query,
             "k": self.story_count,
