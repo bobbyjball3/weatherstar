@@ -17,6 +17,7 @@ import pygame
 from pydantic import PrivateAttr
 
 from weatherstar.components.base import ComponentSpec
+from weatherstar.datasources.radar import DEFAULT_BASEMAP_COLOR
 from weatherstar.registry import plugin
 from weatherstar.screens.base import Screen
 from weatherstar.themes import LayoutVariant
@@ -97,7 +98,9 @@ class RadarScreen(Screen):
             frame_text = self.font(ctx, "tiny").render(self._frame_label(len(frames)), True, white)
             surface.blit(frame_text, frame_text.get_rect(topright=(rect.right - 6, rect.top + 6)))
         else:
-            pygame.draw.rect(surface, (0, 20, 40), rect)
+            radar = self.optional_datasource(ctx, "radar")
+            background = getattr(radar, "basemap_color", DEFAULT_BASEMAP_COLOR)
+            pygame.draw.rect(surface, background, rect)
             msg = self.font(ctx, "large").render("RADAR UPDATING", True, yellow)
             surface.blit(msg, msg.get_rect(center=rect.center))
             msg2 = self.font(ctx, "normal").render("Connecting to NOAA HRRR...", True, white)

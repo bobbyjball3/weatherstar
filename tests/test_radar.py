@@ -143,6 +143,22 @@ def test_basemap_disabled_returns_none(pygame_env):
     assert NoaaRadar(show_basemap=False).basemap(37.0, -95.0) is None
 
 
+def test_basemap_uses_configured_color(pygame_env, tmp_path):
+    ds = NoaaRadar(basemap_color=(10, 20, 30))
+    tile = pygame.Surface((256, 256), pygame.SRCALPHA)  # transparent: only the fill shows
+    path = tmp_path / "tile.png"
+    pygame.image.save(tile, str(path))
+    png = path.read_bytes()
+
+    def handler(request):
+        return httpx.Response(200, content=png, headers={"content-type": "image/png"})
+
+    ds._client = httpx.Client(transport=httpx.MockTransport(handler))
+    surface = ds.basemap(37.0, -95.0)
+    assert surface is not None
+    assert surface.get_at((0, 0))[:3] == (10, 20, 30)
+
+
 def test_frames_offline_returns_empty_and_caches():
     ds = NoaaRadar()
     calls = []

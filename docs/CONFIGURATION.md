@@ -185,6 +185,8 @@ forecast_minutes = 120
 frame_interval_minutes = 15
 # Composite frames over an IEM county-border map background.
 show_basemap = true
+# RGB fill behind the basemap the radar echoes are drawn over.
+basemap_color = [200, 180, 140]
 
 [datasource.stocks]
 # HTTP request timeout in seconds.

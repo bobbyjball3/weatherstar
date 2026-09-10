@@ -43,7 +43,8 @@ _RUN_URL = (
 _TILE_URL = "https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/uscounties/{z}/{x}/{y}.png"
 _TILE_SIZE = 256
 _MAX_TILE_ZOOM = 7
-_BASEMAP_BG = (0, 0, 160)
+#: Default basemap fill: the warm retro NEXRAD tan the radar echoes sit on.
+DEFAULT_BASEMAP_COLOR = (200, 180, 140)
 _BORDER_COLOR = 130
 
 # HRRR CONUS geographic bounds (from the product's ``.wld``: 0.02 deg pixels with
@@ -85,6 +86,10 @@ class NoaaRadar(Datasource):
     show_basemap: bool = Field(
         default=True,
         description="Composite frames over an IEM county-border map background.",
+    )
+    basemap_color: tuple[int, int, int] = Field(
+        default=DEFAULT_BASEMAP_COLOR,
+        description="RGB fill behind the basemap the radar echoes are drawn over.",
     )
 
     # -- crop math (also unit-tested directly) --------------------------------
@@ -238,11 +243,11 @@ class NoaaRadar(Datasource):
             sy = max(0, min(horiz.height - 1, sy))
             lines.paste(horiz.crop((0, sy, _CROP_TARGET[0], sy + 1)), (0, oy))
 
-        # The tiles are black line art: recolor to gray over the radar blue.
+        # The tiles are black line art: recolor to gray over the basemap fill.
         alpha = lines.getchannel("A")
         gray = Image.new("L", lines.size, _BORDER_COLOR)
         border = Image.merge("RGBA", (gray, gray, gray, alpha))
-        background = Image.new("RGBA", _CROP_TARGET, (*_BASEMAP_BG, 255))
+        background = Image.new("RGBA", _CROP_TARGET, (*self.basemap_color, 255))
         background.alpha_composite(border)
         return pygame.image.frombytes(background.convert("RGB").tobytes(), _CROP_TARGET, "RGB")
 
