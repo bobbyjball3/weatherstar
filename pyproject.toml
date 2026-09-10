@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
+    "cachetools>=5.3",
     "ephem>=4.1.0",
     "pydantic>=2.0",
     "pygame==2.6.1",

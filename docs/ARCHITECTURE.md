@@ -89,9 +89,10 @@ through the context.
 
 - a `requests.Session` built lazily per instance with the configured
   `User-Agent` and any auth derived from sensitive fields (`_session_for`);
-- `http_get_json(...)` with timeout, status logging and graceful `None` on
-  failure;
-- a tiny TTL cache (`cache_get` / `cache_set`) so screens can poll cheaply.
+- `http_get_json(...)` / `http_get_bytes(...)` / `http_post_json(...)` with
+  timeout, status logging and graceful `None` on failure;
+- a per-instance TTL cache applied with the `@cached(ttl)` decorator, so a
+  fetch method is written as a plain API call and the cache stays invisible.
 
 Auth fields typed as Pydantic `SecretStr` (e.g. `stocks.api_key`) are unwrapped
 only at the point of use (`get_secret_value()`), and query-param style keys

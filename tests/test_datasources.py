@@ -151,6 +151,7 @@ def _news(**values):
 class _Resp:
     def __init__(self, payload):
         self._payload = payload
+        self.status_code = 200
 
     def raise_for_status(self):
         return None

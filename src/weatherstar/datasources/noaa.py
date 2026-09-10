@@ -21,11 +21,11 @@ from __future__ import annotations
 
 import calendar
 from datetime import date, datetime
-from typing import Any, ClassVar
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-from weatherstar.datasources.base import Datasource, coerce_float
+from weatherstar.datasources.base import Datasource, cached, coerce_float
 from weatherstar.registry import plugin
 
 BASE_URL = "https://api.weather.gov"
@@ -387,28 +387,16 @@ _CURRENT_STATION_SCAN = 8
 class NoaaWeather(Datasource):
     name = "weather"
 
-    _default_cache_ttl: ClassVar[int] = 300
-
     _grid_cache: dict[str, dict[str, Any]] = PrivateAttr(default_factory=dict)
 
     # -- grid point ----------------------------------------------------------
 
-    def _cache_key_for(self, *parts: Any) -> str:
-        return super()._cache_key("noaa", *parts)
-
+    @cached(3600)
     def get_point(self, lat: float, lon: float) -> dict | None:
-        key = self._cache_key_for("point", lat, lon)
-        cached = self.cache_get(key, 3600)
-        if cached is not None:
-            return cached
-        url = f"{BASE_URL}/points/{lat:.4f},{lon:.4f}"
-        data = self.http_get_json(url)
-        if not data:
-            return None
-        props = data["properties"]
-        self.cache_set(key, props)
-        return props
+        data = self.http_get_json(f"{BASE_URL}/points/{lat:.4f},{lon:.4f}")
+        return data["properties"] if data else None
 
+    @cached(3600)
     def _station_features(self, lat: float, lon: float) -> list[dict[str, str]]:
         """Nearby observation stations as ``[{"id", "name"}]``, nearest first.
 
@@ -422,26 +410,20 @@ class NoaaWeather(Datasource):
         stations_url = point.get("observationStations")
         if not stations_url:
             return []
-        key = self._cache_key_for("stations", stations_url)
-        cached = self.cache_get(key, 3600)
-        if cached is not None:
-            return cached
         data = self.http_get_json(stations_url)
-        features: list[dict[str, str]] = []
-        if data:
-            for feature in data["features"]:
-                props = feature["properties"]
-                features.append(
-                    {
-                        "id": props["stationIdentifier"],
-                        "name": clean_station_name(props.get("name") or ""),
-                    }
-                )
-            preferred = [f for f in features if len(f["id"]) == 4 and f["id"][0] not in "UC"]
-            if preferred:
-                features = preferred + [f for f in features if f not in preferred]
-        self.cache_set(key, features)
-        return features
+        if not data:
+            return []
+        features = [
+            {
+                "id": feature["properties"]["stationIdentifier"],
+                "name": clean_station_name(feature["properties"].get("name") or ""),
+            }
+            for feature in data["features"]
+        ]
+        preferred = [f for f in features if len(f["id"]) == 4 and f["id"][0] not in "UC"]
+        if not preferred:
+            return features
+        return preferred + [f for f in features if f not in preferred]
 
     def _observation_stations(self, lat: float, lon: float) -> list[str]:
         return [feature["id"] for feature in self._station_features(lat, lon)]
@@ -452,21 +434,16 @@ class NoaaWeather(Datasource):
 
     # -- typed fetches ---------------------------------------------------------
 
+    @cached(300)
     def _latest_observation(
         self, station_id: str, station_name: str = ""
     ) -> CurrentConditions | None:
         """Latest observation model for one station (cached by station)."""
-        key = self._cache_key_for("current", station_id)
-        cached = self.cache_get(key, 300)
-        if cached is not None:
-            return cached
         url = f"{BASE_URL}/stations/{station_id}/observations/latest"
         props = (self.http_get_json(url) or {}).get("properties")
         if not props:
             return None
-        observation = CurrentConditions.from_props(props, station_name=station_name)
-        self.cache_set(key, observation)
-        return observation
+        return CurrentConditions.from_props(props, station_name=station_name)
 
     def get_current(self, lat: float, lon: float) -> CurrentConditions | None:
         """Latest observation for the nearest *usable* station.
@@ -519,6 +496,7 @@ class NoaaWeather(Datasource):
             return None
         return office, int(grid_x), int(grid_y)
 
+    @cached(1800)
     def _periods(
         self,
         lat: float,
@@ -526,44 +504,31 @@ class NoaaWeather(Datasource):
         path: str,
         *,
         units: str,
-        cache_ttl: int,
     ) -> list[ForecastPeriod]:
         """Fetch ``path`` forecast props and parse into period models."""
         grid = self._grid(lat, lon)
         if not grid:
             return []
         office, grid_x, grid_y = grid
-        key = self._cache_key_for(path, office, grid_x, grid_y, units)
-        cached = self.cache_get(key, cache_ttl)
-        if cached is not None:
-            return cached
         url = f"{BASE_URL}/gridpoints/{office}/{grid_x},{grid_y}/{path}"
         data = self.http_get_json(url, params={"units": units}) or {}
-        periods = [
+        return [
             ForecastPeriod.from_props(raw)
             for raw in data.get("properties", {}).get("periods") or []
         ]
-        self.cache_set(key, periods)
-        return periods
 
     def get_forecast(self, lat: float, lon: float, units: str = "us") -> list[ForecastPeriod]:
-        return self._periods(lat, lon, "forecast", units=units, cache_ttl=1800)
+        return self._periods(lat, lon, "forecast", units=units)
 
     def get_hourly(self, lat: float, lon: float, units: str = "us") -> list[ForecastPeriod]:
-        return self._periods(lat, lon, "forecast/hourly", units=units, cache_ttl=1800)
+        return self._periods(lat, lon, "forecast/hourly", units=units)
 
     # -- regional tables ---------------------------------------------------------
 
+    @cached(3600)
     def _station_meta(self, station_id: str) -> dict:
         """Full station JSON (top-level ``geometry`` + ``properties``)."""
-        key = self._cache_key_for("station_meta", station_id)
-        cached = self.cache_get(key, 3600)
-        if cached is not None:
-            return cached
-        data = self.http_get_json(f"{BASE_URL}/stations/{station_id}")
-        payload = data or {}
-        self.cache_set(key, payload)
-        return payload
+        return self.http_get_json(f"{BASE_URL}/stations/{station_id}") or {}
 
     def _station_forecast_url(self, station_id: str) -> str | None:
         """Gridpoint forecast URL for one station, or ``None``.
@@ -587,19 +552,14 @@ class NoaaWeather(Datasource):
         forecast = (meta.get("properties") or {}).get("forecast") or ""
         return forecast if "/gridpoints/" in forecast else None
 
+    @cached(1800)
     def _gridpoint_periods(self, forecast_url: str) -> list[ForecastPeriod]:
         """Parse ``periods`` from an explicit gridpoint forecast URL."""
-        key = self._cache_key_for("regional_forecast", forecast_url)
-        cached = self.cache_get(key, 1800)
-        if cached is not None:
-            return cached
         data = self.http_get_json(forecast_url, params={"units": "us"}) or {}
-        periods = [
+        return [
             ForecastPeriod.from_props(raw)
             for raw in data.get("properties", {}).get("periods") or []
         ]
-        self.cache_set(key, periods)
-        return periods
 
     def get_regional_forecast(
         self, lat: float, lon: float, limit: int = 7

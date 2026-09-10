@@ -9,11 +9,11 @@ HTTP helpers with TTL caching, and returns typed rows most-recent-first.
 from __future__ import annotations
 
 import time
-from typing import Any, ClassVar
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-from weatherstar.datasources.base import Datasource, coerce_float
+from weatherstar.datasources.base import Datasource, cached, coerce_float
 from weatherstar.registry import plugin
 
 _HISTORY_URL = "https://api.open-meteo.com/v1/forecast"
@@ -44,19 +44,14 @@ class PrecipRow(BaseModel):
 class HistoryDatasource(Datasource):
     name = "history"
 
-    _default_cache_ttl: ClassVar[int] = _CACHE_TTL
-
     _offset_temp: float = PrivateAttr(default=0.0)
     _offset_precip: float = PrivateAttr(default=0.0)
     _last_scroll: float = PrivateAttr(default_factory=time.time)
 
     # -- fetching ------------------------------------------------------------
 
+    @cached(_CACHE_TTL)
     def _daily(self, lat: float, lon: float) -> dict[str, Any]:
-        key = self._cache_key("history", round(lat, 4), round(lon, 4))
-        cached = self.cache_get(key, _CACHE_TTL)
-        if cached is not None:
-            return cached
         data = self.http_get_json(
             _HISTORY_URL,
             params={
@@ -70,9 +65,7 @@ class HistoryDatasource(Datasource):
             },
             timeout=10,
         )
-        daily = (data or {}).get("daily") or {}
-        self.cache_set(key, daily)
-        return daily
+        return (data or {}).get("daily") or {}
 
     def refresh(self, lat: float, lon: float) -> bool:
         daily = self._daily(lat, lon)

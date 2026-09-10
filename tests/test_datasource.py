@@ -1,16 +1,45 @@
 """Tests for the Datasource base: auth, query params, HTTP, TTL cache."""
 
-import time
-
 import requests
-from pydantic import SecretStr
+from pydantic import PrivateAttr, SecretStr
 
-from weatherstar.datasources.base import Datasource
+from weatherstar.datasources.base import Datasource, cached
 
 
 class AuthDS(Datasource):
     api_key: SecretStr | None = None
     api_key_param: str | None = None
+
+
+class CountingDS(Datasource):
+    _calls: int = PrivateAttr(default=0)
+
+    @cached(60)
+    def value(self, x):
+        self._calls += 1
+        return x * 2
+
+    @cached(60)
+    def maybe(self, x):
+        self._calls += 1
+        return None
+
+
+class CollidingDS(Datasource):
+    """Two methods with the same TTL and args must not share a cache entry."""
+
+    _dict_calls: int = PrivateAttr(default=0)
+    _list_calls: int = PrivateAttr(default=0)
+
+    @cached(60)
+    def as_dict(self, x):
+        self._dict_calls += 1
+        return {"kind": "dict"}
+
+    @cached(60)
+    def as_list(self, x):
+        self._list_calls += 1
+        return ["list"]
 
 
 def _auth(**values) -> AuthDS:
@@ -88,20 +117,40 @@ def test_http_get_json_invalid_json_returns_none(monkeypatch):
     assert ds.http_get_json("https://x") is None
 
 
-def test_cache_ttl_and_expiry():
-    ds = AuthDS()
-    ds.cache_set("k", "v")
-    assert ds.cache_get("k") == "v"
-    assert ds.cache_get("k", max_age=1) == "v"
-    ds._cache_time["k"] = time.time() - 1000  # expired beyond default ttl
-    assert ds.cache_get("k") is None
-    assert ds.cache_get("missing") is None
+def test_cached_decorator_caches_by_args():
+    ds = CountingDS()
+    assert ds.value(2) == 4
+    assert ds.value(2) == 4  # cache hit -> no second call
+    assert ds._calls == 1
+    assert ds.value(3) == 6  # distinct args -> miss
+    assert ds._calls == 2
 
 
-def test_cache_key_is_stable_json():
-    ds = AuthDS()
-    assert ds._cache_key("a", 1) == ds._cache_key("a", 1)
-    assert ds._cache_key("a", (1, 2)) != ds._cache_key("a", (2, 1))
+def test_cached_decorator_does_not_pin_none():
+    ds = CountingDS()
+    assert ds.maybe(1) is None
+    assert ds.maybe(1) is None  # None not cached -> retried
+    assert ds._calls == 2
+
+
+def test_cached_decorator_uses_a_ttl_cache_per_instance():
+    from cachetools import TTLCache
+
+    ds = CountingDS()
+    cache = ds._cache_for(60)
+    assert isinstance(cache, TTLCache)
+    assert cache.ttl == 60
+    assert cache is ds._cache_for(60)
+    assert CountingDS()._cache_for(60) is not cache
+
+
+def test_cached_decorator_keys_include_the_method():
+    ds = CollidingDS()
+    assert ds.as_dict(1) == {"kind": "dict"}
+    assert ds.as_list(1) == ["list"]  # same ttl+args must not reuse the dict
+    assert ds.as_dict(1) == {"kind": "dict"}
+    assert ds._dict_calls == 1
+    assert ds._list_calls == 1
 
 
 def test_close_clears_session():

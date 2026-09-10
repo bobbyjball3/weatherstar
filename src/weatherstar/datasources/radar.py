@@ -10,11 +10,10 @@ seconds).  All HTTP goes through the base Datasource helpers.
 from __future__ import annotations
 
 import io
-from typing import ClassVar
 
 import pygame
 
-from weatherstar.datasources.base import Datasource
+from weatherstar.datasources.base import Datasource, cached
 from weatherstar.registry import plugin
 
 # Candidate image templates, newest first ordering handled per-frame below.
@@ -39,8 +38,6 @@ class NoaaRadar(Datasource):
     """Fetch cropped NOAA CONUS radar frames for a lat/lon."""
 
     name = "radar"
-
-    _default_cache_ttl: ClassVar[int] = _FRAME_TTL
 
     # -- crop math (also unit-tested directly) --------------------------------
 
@@ -68,13 +65,8 @@ class NoaaRadar(Datasource):
     # -- fetching -------------------------------------------------------------
 
     def _fetch_bytes(self, url: str) -> bytes | None:
-        try:
-            response = self._session_for().get(url, timeout=self.timeout)
-            if response.status_code == 200 and len(response.content) > 1000:
-                return response.content
-        except Exception as exc:  # noqa: BLE001 - best-effort network fetch
-            self._log.debug("radar_fetch_failed", url=url, error=str(exc))
-        return None
+        data = self.http_get_bytes(url)
+        return data if data and len(data) > 1000 else None
 
     @staticmethod
     def _build_frame(data: bytes, lat: float, lon: float) -> pygame.Surface:
@@ -98,12 +90,7 @@ class NoaaRadar(Datasource):
                         self._log.debug("radar_decode_failed", url=url, error=str(exc))
         return frames
 
+    @cached(_FRAME_TTL)
     def frames(self, lat: float, lon: float) -> list[pygame.Surface]:
-        """Return the cached (or freshly fetched) radar frame list."""
-        key = self._cache_key("radar", round(lat, 4), round(lon, 4))
-        cached = self.cache_get(key, _FRAME_TTL)
-        if cached is not None:
-            return cached
-        result = self._fetch_frames(lat, lon)
-        self.cache_set(key, result)  # cache failures too, to throttle retries
-        return result
+        """Return the radar frames, cropped to the regional view (empty offline)."""
+        return self._fetch_frames(lat, lon)

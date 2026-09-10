@@ -15,7 +15,7 @@ from typing import ClassVar
 import requests
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from weatherstar.datasources.base import Datasource
+from weatherstar.datasources.base import Datasource, cached
 from weatherstar.registry import plugin
 
 
@@ -32,7 +32,6 @@ class Headline(BaseModel):
 class LocalNewsDatasource(Datasource):
     name = "local_news"
 
-    _default_cache_ttl: ClassVar[int] = 3600
     _api_endpoint: ClassVar[str] = "https://api.webz.io/api/news/context"
 
     api_key: SecretStr | None = Field(
@@ -91,14 +90,7 @@ class LocalNewsDatasource(Datasource):
                 "category": self.news_categories,
             },
         }
-        try:
-            response = self._session_for().post(self._api_endpoint, json=body, timeout=self.timeout)
-            response.raise_for_status()
-            payload = response.json()
-        except (requests.RequestException, ValueError) as exc:
-            self._log.warning("news_fetch_failed", error=str(exc))
-            return []
-
+        payload = self.http_post_json(self._api_endpoint, body)
         results = payload.get("results") if isinstance(payload, dict) else None
         headlines: list[Headline] = []
         for result in results or []:
@@ -115,13 +107,7 @@ class LocalNewsDatasource(Datasource):
         """Return a city label; empty lets the screen fall back to weather data."""
         return ""
 
+    @cached(3600)
     def headlines(self, lat: float, lon: float) -> list[Headline]:
         """Return the local headlines (most recent first)."""
-        key = self._cache_key("local_news")
-        cached = self.cache_get(key)
-        if cached is not None:
-            return cached
-
-        headlines = self._get_headlines()
-        self.cache_set(key, headlines)
-        return headlines
+        return self._get_headlines()

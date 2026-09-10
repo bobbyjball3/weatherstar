@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from weatherstar.datasources.base import Datasource, coerce_float
+from weatherstar.datasources.base import Datasource, cached, coerce_float
 from weatherstar.registry import plugin
 
 NOAA_ALERTS_URL = "https://api.weather.gov/alerts/active"
@@ -112,16 +112,12 @@ class NoaaAlertsDatasource(Datasource):
         description="Colon-separated severity order used to sort alerts (most severe first).",
     )
 
+    @cached(60)
     def active(self, lat: float, lon: float) -> list[Alert]:
-        key = self._cache_key("alerts", lat, lon)
-        cached = self.cache_get(key, 60)
-        if cached is not None:
-            return cached
         data = self.http_get_json(NOAA_ALERTS_URL, params={"point": f"{lat},{lon}"}, timeout=5)
         alerts = _parse_alerts(data or {})
         priority = [p.strip() for p in self.severity_priority.split(":") if p.strip()]
         alerts.sort(key=lambda a: priority.index(a.severity) if a.severity in priority else 99)
-        self.cache_set(key, alerts)
         return alerts
 
     def is_critical(self, alerts: list[Alert]) -> bool:
@@ -139,11 +135,8 @@ class EarthquakesDatasource(Datasource):
     )
     limit: int = Field(default=10, description="Maximum number of earthquakes to fetch.")
 
+    @cached(1800)
     def recent(self, lat: float, lon: float) -> list[Earthquake]:
-        key = self._cache_key("quakes", lat, lon, self.min_magnitude, self.limit)
-        cached = self.cache_get(key, 1800)
-        if cached is not None:
-            return cached
         params = {
             "format": "geojson",
             "minmagnitude": self.min_magnitude,
@@ -164,7 +157,6 @@ class EarthquakesDatasource(Datasource):
                     ),
                 )
             )
-        self.cache_set(key, result)
         return result
 
 
@@ -174,11 +166,8 @@ class UvIndexDatasource(Datasource):
 
     days: int = Field(default=7, description="Number of days of UV index forecast to fetch.")
 
+    @cached(1800)
     def daily(self, lat: float, lon: float) -> list[UvReading]:
-        key = self._cache_key("uv", lat, lon, self.days)
-        cached = self.cache_get(key, 1800)
-        if cached is not None:
-            return cached
         params = {
             "latitude": lat,
             "longitude": lon,
@@ -190,12 +179,10 @@ class UvIndexDatasource(Datasource):
         daily = (data or {}).get("daily") or {}
         dates = daily.get("time") or []
         values = daily.get("uv_index_max") or []
-        result = [
+        return [
             UvReading(date=str(dates[i]), uv_index=coerce_float(values[i]))
             for i in range(len(dates))
         ]
-        self.cache_set(key, result)
-        return result
 
     @staticmethod
     def protection_level(uv_index: float) -> str:
@@ -244,11 +231,8 @@ class StockMarketDatasource(Datasource):
                 result.append(quote)
         return result
 
+    @cached(300)
     def _quote(self, symbol: str) -> Quote | None:
-        key = self._cache_key("quote", symbol)
-        cached = self.cache_get(key, 300)
-        if cached is not None:
-            return cached
         data = self.http_get_json(
             "https://www.alphavantage.co/query",
             params={"function": "GLOBAL_QUOTE", "symbol": symbol},
@@ -263,15 +247,13 @@ class StockMarketDatasource(Datasource):
             direction = "up"
         elif change is not None and change < 0:
             direction = "down"
-        result = Quote(
+        return Quote(
             symbol=str(quote.get("01. symbol", symbol)),
             price=coerce_float(quote.get("05. price")),
             change=change,
             change_percent=coerce_float(quote.get("10. change percent")),
             direction=direction,
         )
-        self.cache_set(key, result)
-        return result
 
     def __repr__(self) -> str:
         return f"<StockMarketDatasource name={self.name!r} api_key=***>"
