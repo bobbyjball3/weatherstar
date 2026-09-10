@@ -6,7 +6,7 @@ import httpx
 import pygame
 
 from weatherstar.datasources.history import HistoryDatasource
-from weatherstar.media.icons import IconManager
+from weatherstar.media.icons import AnimatedIcon, IconManager
 
 _DAILY = {
     "time": ["2026-09-01", "2026-09-02", "2026-09-03"],
@@ -131,3 +131,107 @@ def test_icon_gif_colorkey_survives_loading_and_scaling(pygame_env):
     navy.blit(icon, (5, 5))
     # Where the artwork's white canvas was (icon corner), the navy shows through.
     assert navy.get_at((5, 5))[:3] == (0, 0, 80)
+
+
+def _write_gif(path, colors, duration_ms=100):
+    """Write a solid-color animated GIF using Pillow (now a runtime dependency)."""
+    from PIL import Image
+
+    frames = [Image.new("RGB", (4, 4), color) for color in colors]
+    frames[0].save(
+        path,
+        save_all=True,
+        append_images=frames[1:],
+        duration=duration_ms,
+        loop=0,
+    )
+
+
+def _corner(surface):
+    return surface.get_at((0, 0))[:3]
+
+
+def test_icon_manager_animates_multi_frame_gif(pygame_env, tmp_path):
+    """A multi-frame GIF cycles frames off the manager's shared dt clock."""
+    icon_dir = tmp_path / "icons"
+    icon_dir.mkdir()
+    _write_gif(icon_dir / "Cycle.gif", [(255, 0, 0), (0, 255, 0), (0, 0, 255)])
+
+    manager = IconManager(icon_dir)
+    assert isinstance(manager._find("Cycle"), AnimatedIcon)
+    assert _corner(manager.get_icon("Cycle")) == (255, 0, 0)
+    manager.tick(0.1)
+    assert _corner(manager.get_icon("Cycle")) == (0, 255, 0)
+    manager.tick(0.1)
+    assert _corner(manager.get_icon("Cycle")) == (0, 0, 255)
+    # Past the total duration the animation loops back to the first frame.
+    manager.tick(0.1)
+    assert _corner(manager.get_icon("Cycle")) == (255, 0, 0)
+
+
+def test_icon_manager_static_gif_ignores_clock(pygame_env, tmp_path):
+    """A single-frame GIF stays put no matter how far the clock advances."""
+    icon_dir = tmp_path / "icons"
+    icon_dir.mkdir()
+    _write_gif(icon_dir / "Still.gif", [(10, 20, 30)])
+
+    manager = IconManager(icon_dir)
+    assert not isinstance(manager._find("Still"), AnimatedIcon)
+    before = _corner(manager.get_icon("Still"))
+    manager.tick(5.0)
+    assert _corner(manager.get_icon("Still")) == before
+
+
+def test_icon_manager_animated_icon_keeps_transparency(pygame_env, tmp_path):
+    """Decoded animated frames keep their transparent canvas when blitted."""
+    from PIL import Image
+
+    icon_dir = tmp_path / "icons"
+    icon_dir.mkdir()
+    # A transparent pixel at (0, 0) over an opaque accent at (1, 1).
+    frames = []
+    for color in ((255, 0, 0), (0, 0, 255)):
+        frame = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+        frame.putpixel((1, 1), (*color, 255))
+        frames.append(frame)
+    frames[0].save(
+        icon_dir / "Ghost.gif", save_all=True, append_images=frames[1:], duration=100, loop=0
+    )
+
+    manager = IconManager(icon_dir)
+    navy = pygame.Surface((20, 20))
+    navy.fill((0, 0, 80))
+    navy.blit(manager.get_icon("Ghost"), (0, 0))
+    assert navy.get_at((0, 0))[:3] == (0, 0, 80)
+    assert navy.get_at((1, 1))[:3] == (255, 0, 0)
+
+
+def test_icon_manager_without_pillow_falls_back_to_static(pygame_env, tmp_path, monkeypatch):
+    """Without Pillow, a multi-frame GIF still loads as its first frame."""
+    import weatherstar.media.icons as icons
+
+    icon_dir = tmp_path / "icons"
+    icon_dir.mkdir()
+    _write_gif(icon_dir / "Cycle.gif", [(255, 0, 0), (0, 255, 0), (0, 0, 255)])
+
+    monkeypatch.setattr(icons, "Image", None)
+    manager = icons.IconManager(icon_dir)
+    assert not isinstance(manager._find("Cycle"), AnimatedIcon)
+    assert _corner(manager.get_icon("Cycle")) == (255, 0, 0)
+
+
+def test_shipped_animated_icon_decodes_multiple_frames(pygame_env):
+    """The classic condition GIFs really animate (regression: first frame only)."""
+    from pathlib import Path
+
+    import pytest
+
+    source = Path("static_assets/weatherstar_4000/icons/Freezing-Rain-Sleet.gif")
+    if not source.exists():
+        pytest.skip("icon assets not present")
+
+    manager = IconManager(source.parent)
+    icon = manager._find("Freezing-Rain-Sleet")
+    assert isinstance(icon, AnimatedIcon)
+    assert len(icon.frames) > 1
+    assert icon.total_duration > 0

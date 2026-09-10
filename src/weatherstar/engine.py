@@ -280,6 +280,10 @@ class SequenceRunner:
         name = self.sequence.slides[index].screen
         screen = self.by_name[name]
         self.ctx.active_screen = name
+        # Advance the shared weather-icon animation clock once per frame.
+        icon_manager = getattr(self.ctx, "icon_manager", None)
+        if icon_manager is not None and hasattr(icon_manager, "tick"):
+            icon_manager.tick(dt)
         screen.step(self.ctx, dt)
         screen.draw(self.ctx.surface, self.ctx, dt)
 

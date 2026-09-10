@@ -83,7 +83,8 @@ through the context.
 
 - `fonts` → `ctx.fonts` (named `pygame.font.Font` objects)
 - `backgrounds` / `logos` / `icons` → `ctx.assets` dicts plus
-  `ctx.assets["icon_manager"]`
+  `ctx.assets["icon_manager"]`; the icon manager animates multi-frame GIFs off
+  a shared clock the engine ticks once per frame (Pillow decodes the frames)
 - `music` → discovers tracks; playback is *owned by the engine*, not the media
   plugin (see below).
 
