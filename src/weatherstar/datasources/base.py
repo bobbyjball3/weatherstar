@@ -125,6 +125,19 @@ class Datasource(Plugin):
             self._log.warning("http_failed", url=str(request.url), error=str(exc))
             return None
 
+    def exists(self, request: httpx.Request) -> bool:
+        """Send a lightweight probe, returning whether the resource is present.
+
+        Unlike :meth:`send`, an expected miss (404) is not logged as a failure,
+        so discovery probes (e.g. "has this model run been published?") do not
+        spam the log with warnings.
+        """
+        try:
+            response = self.client.send(request)
+            return response.status_code < 400
+        except (httpx.HTTPError, httpx.InvalidURL):
+            return False
+
     def fetch(
         self,
         request: httpx.Request,

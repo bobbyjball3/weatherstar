@@ -179,6 +179,12 @@ cache_ttl = 300
 headers = {User-Agent = "weatherstar (python)"}
 # Static query parameters merged into every request.
 query = {}
+# How far ahead the future-radar loop runs, in minutes.
+forecast_minutes = 120
+# Minutes between future-radar frames (the HRRR forecast step).
+frame_interval_minutes = 15
+# Composite frames over an IEM county-border map background.
+show_basemap = true
 
 [datasource.stocks]
 # HTTP request timeout in seconds.
