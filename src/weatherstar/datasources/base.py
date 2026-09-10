@@ -2,17 +2,18 @@
 
 Concrete datasources fetch from external APIs (NOAA, Open Meteo, USGS, Alpha
 Vantage, webz.io, ...).  The base owns every cross-cutting HTTP concern and
-splits a fetch into two readable steps:
+keeps the two halves of a fetch apart:
 
-- :meth:`Datasource.build_request` builds an ``httpx.Request`` with the
-  configured headers/query merged in;
-- :meth:`Datasource.response_json` / :meth:`response_bytes` read the response.
+- ``build_request`` (called by a datasource's own request method) constructs an
+  ``httpx.Request`` with the configured headers/query merged in;
+- ``response_json`` / ``response_bytes`` (called by its response method) read
+  the body.
 
-:meth:`Datasource.send` performs the request itself (timeout, status logging,
-graceful ``None`` on failure), so a datasource never touches the HTTP client.
-Method results are cached with the base-vended :func:`~weatherstar.plugin.memoize`
-decorator, keyed by the method and its arguments rather than the request, so the
-cache stays stable as a request's shape changes.
+:meth:`Datasource.fetch` sends a built request and hands the response to the
+processor, so a datasource never touches the HTTP client.  Method results are
+cached with the base-vended :func:`~weatherstar.plugin.memoize` decorator, keyed
+by the method and its arguments rather than the request, so the cache stays
+stable as a request's shape changes.
 
 Authentication-related config values are typed ``SecretStr`` and are therefore
 masked by ``repr`` / ``str`` / the logging redaction processor.
@@ -20,6 +21,7 @@ masked by ``repr`` / ``str`` / the logging redaction processor.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -46,16 +48,21 @@ def coerce_float(value: Any) -> float | None:
 class Datasource(Plugin):
     """Base class for plugin datasources.
 
-    Subclasses declare typed config fields and implement fetch methods by
-    composing :meth:`build_request` (request construction) with
-    :meth:`send` (the base-owned HTTP call) and a response reader, then decorate
-    the method with :func:`~weatherstar.plugin.memoize` to cache its result::
+    Subclasses implement each operation as a pair of pure methods — one that
+    builds the request, one that reads the response — and hand them to
+    :meth:`fetch`, which owns the transport.  Decorate the public method with
+    :func:`~weatherstar.plugin.memoize` to cache its result::
+
+        def _forecast_request(self, url: str) -> httpx.Request:
+            return self.build_request("GET", url, params={"units": "us"})
+
+        def _forecast_response(self, response) -> list[ForecastPeriod]:
+            data = self.response_json(response) or {}
+            return [ForecastPeriod.from_props(r) for r in data["properties"]["periods"]]
 
         @memoize(ttl=1800)
         def get_forecast(self, lat, lon):
-            response = self.send(self.build_request("GET", url, params={"units": "us"}))
-            data = self.response_json(response) or {}
-            return [ForecastPeriod.from_props(r) for r in data["properties"]["periods"]]
+            return self.fetch(self._forecast_request(url), self._forecast_response)
     """
 
     kind = "datasource"
@@ -135,6 +142,21 @@ class Datasource(Plugin):
         except (httpx.HTTPError, httpx.InvalidURL) as exc:
             self._log.warning("http_failed", url=str(request.url), error=str(exc))
             return None
+
+    def fetch(
+        self,
+        request: httpx.Request,
+        process: Callable[..., Any],
+        **context: Any,
+    ) -> Any:
+        """Send ``request`` and return ``process(response, **context)``.
+
+        A fetch is kept in two independent halves: building the request (done by
+        the caller, usually a dedicated ``_<op>_request`` method) and processing
+        the response (``process``, usually a ``_<op>_response`` method).  All
+        transport stays here in the base.
+        """
+        return process(self.send(request), **context)
 
     # -- response readers ---------------------------------------------------
 

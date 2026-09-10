@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
+import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from weatherstar.datasources.base import Datasource, coerce_float
@@ -113,16 +114,20 @@ class NoaaAlertsDatasource(Datasource):
         description="Colon-separated severity order used to sort alerts (most severe first).",
     )
 
-    @memoize(ttl=60)
-    def active(self, lat: float, lon: float) -> list[Alert]:
-        request = self.build_request(
+    def _alerts_request(self, lat: float, lon: float) -> httpx.Request:
+        return self.build_request(
             "GET", NOAA_ALERTS_URL, params={"point": f"{lat},{lon}"}, timeout=5
         )
-        data = self.response_json(self.send(request))
-        alerts = _parse_alerts(data or {})
+
+    def _alerts_response(self, response: httpx.Response | None) -> list[Alert]:
+        alerts = _parse_alerts(self.response_json(response) or {})
         priority = [p.strip() for p in self.severity_priority.split(":") if p.strip()]
         alerts.sort(key=lambda a: priority.index(a.severity) if a.severity in priority else 99)
         return alerts
+
+    @memoize(ttl=60)
+    def active(self, lat: float, lon: float) -> list[Alert]:
+        return self.fetch(self._alerts_request(lat, lon), self._alerts_response)
 
     def is_critical(self, alerts: list[Alert]) -> bool:
         return any(a.severity == "Extreme" for a in alerts) or any(
@@ -139,17 +144,19 @@ class EarthquakesDatasource(Datasource):
     )
     limit: int = Field(default=10, description="Maximum number of earthquakes to fetch.")
 
-    @memoize(ttl=1800)
-    def recent(self, lat: float, lon: float) -> list[Earthquake]:
+    def _recent_request(self) -> httpx.Request:
         params = {
             "format": "geojson",
             "minmagnitude": self.min_magnitude,
             "limit": self.limit,
             "orderby": "time",
         }
-        data = self.response_json(self.send(self.build_request("GET", USGS_URL, params=params)))
+        return self.build_request("GET", USGS_URL, params=params)
+
+    def _recent_response(self, response: httpx.Response | None) -> list[Earthquake]:
         result: list[Earthquake] = []
-        for event in (data or {}).get("features") or []:
+        data = self.response_json(response) or {}
+        for event in data.get("features") or []:
             props = event["properties"]
             time_ms = coerce_float(props.get("time"))
             result.append(
@@ -163,6 +170,10 @@ class EarthquakesDatasource(Datasource):
             )
         return result
 
+    @memoize(ttl=1800)
+    def recent(self, lat: float, lon: float) -> list[Earthquake]:
+        return self.fetch(self._recent_request(), self._recent_response)
+
 
 @plugin
 class UvIndexDatasource(Datasource):
@@ -170,8 +181,7 @@ class UvIndexDatasource(Datasource):
 
     days: int = Field(default=7, description="Number of days of UV index forecast to fetch.")
 
-    @memoize(ttl=1800)
-    def daily(self, lat: float, lon: float) -> list[UvReading]:
+    def _daily_request(self, lat: float, lon: float) -> httpx.Request:
         params = {
             "latitude": lat,
             "longitude": lon,
@@ -179,14 +189,20 @@ class UvIndexDatasource(Datasource):
             "timezone": "auto",
             "forecast_days": self.days,
         }
-        data = self.response_json(self.send(self.build_request("GET", OM_UV_URL, params=params)))
-        daily = (data or {}).get("daily") or {}
+        return self.build_request("GET", OM_UV_URL, params=params)
+
+    def _daily_response(self, response: httpx.Response | None) -> list[UvReading]:
+        daily = (self.response_json(response) or {}).get("daily") or {}
         dates = daily.get("time") or []
         values = daily.get("uv_index_max") or []
         return [
             UvReading(date=str(dates[i]), uv_index=coerce_float(values[i]))
             for i in range(len(dates))
         ]
+
+    @memoize(ttl=1800)
+    def daily(self, lat: float, lon: float) -> list[UvReading]:
+        return self.fetch(self._daily_request(lat, lon), self._daily_response)
 
     @staticmethod
     def protection_level(uv_index: float) -> str:
@@ -230,15 +246,15 @@ class StockMarketDatasource(Datasource):
                 result.append(quote)
         return result
 
-    @memoize(ttl=300)
-    def _quote(self, symbol: str) -> Quote | None:
-        request = self.build_request(
+    def _quote_request(self, symbol: str) -> httpx.Request:
+        return self.build_request(
             "GET",
             "https://www.alphavantage.co/query",
             params={"function": "GLOBAL_QUOTE", "symbol": symbol},
         )
-        data = self.response_json(self.send(request))
-        quote = (data or {}).get("Global Quote") or {}
+
+    def _quote_response(self, response: httpx.Response | None, symbol: str) -> Quote | None:
+        quote = (self.response_json(response) or {}).get("Global Quote") or {}
         if not quote:
             return None
         change = coerce_float(quote.get("09. change"))
@@ -254,3 +270,7 @@ class StockMarketDatasource(Datasource):
             change_percent=coerce_float(quote.get("10. change percent")),
             direction=direction,
         )
+
+    @memoize(ttl=300)
+    def _quote(self, symbol: str) -> Quote | None:
+        return self.fetch(self._quote_request(symbol), self._quote_response, symbol=symbol)

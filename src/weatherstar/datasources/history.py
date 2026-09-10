@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+import httpx
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from weatherstar.datasources.base import Datasource, coerce_float
@@ -50,9 +51,8 @@ class HistoryDatasource(Datasource):
 
     # -- fetching ------------------------------------------------------------
 
-    @memoize(ttl=3600)
-    def _daily(self, lat: float, lon: float) -> dict[str, Any]:
-        request = self.build_request(
+    def _daily_request(self, lat: float, lon: float) -> httpx.Request:
+        return self.build_request(
             "GET",
             _HISTORY_URL,
             params={
@@ -65,8 +65,13 @@ class HistoryDatasource(Datasource):
                 "timezone": "auto",
             },
         )
-        data = self.response_json(self.send(request))
-        return (data or {}).get("daily") or {}
+
+    def _daily_response(self, response: httpx.Response | None) -> dict[str, Any]:
+        return (self.response_json(response) or {}).get("daily") or {}
+
+    @memoize(ttl=3600)
+    def _daily(self, lat: float, lon: float) -> dict[str, Any]:
+        return self.fetch(self._daily_request(lat, lon), self._daily_response)
 
     def refresh(self, lat: float, lon: float) -> bool:
         daily = self._daily(lat, lon)

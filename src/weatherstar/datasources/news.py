@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import ClassVar
 
+import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from weatherstar.datasources.base import Datasource
@@ -65,11 +66,7 @@ class LocalNewsDatasource(Datasource):
         description="Number of days to look in the past for news stories.",
     )
 
-    def _get_headlines(self) -> list[Headline]:
-        """Fetch headlines from the webz.io context endpoint ([] when disabled)."""
-        if not self.news_query:
-            return []
-
+    def _headlines_request(self) -> httpx.Request:
         published_from = datetime.now(timezone.utc) - timedelta(days=self.news_day_count)
         body = {
             "query": self.news_query,
@@ -81,8 +78,10 @@ class LocalNewsDatasource(Datasource):
                 "category": self.news_categories,
             },
         }
-        request = self.build_request("POST", self._api_endpoint, json=body)
-        payload = self.response_json(self.send(request))
+        return self.build_request("POST", self._api_endpoint, json=body)
+
+    def _headlines_response(self, response: httpx.Response | None) -> list[Headline]:
+        payload = self.response_json(response)
         results = payload.get("results") if isinstance(payload, dict) else None
         headlines: list[Headline] = []
         for result in results or []:
@@ -102,4 +101,6 @@ class LocalNewsDatasource(Datasource):
     @memoize(ttl=3600)
     def headlines(self, lat: float, lon: float) -> list[Headline]:
         """Return the local headlines (most recent first)."""
-        return self._get_headlines()
+        if not self.news_query:
+            return []
+        return self.fetch(self._headlines_request(), self._headlines_response)

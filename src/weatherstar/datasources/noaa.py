@@ -23,7 +23,8 @@ import calendar
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+import httpx
+from pydantic import BaseModel, ConfigDict, Field
 
 from weatherstar.datasources.base import Datasource, coerce_float
 from weatherstar.plugin import memoize
@@ -388,31 +389,43 @@ _CURRENT_STATION_SCAN = 8
 class NoaaWeather(Datasource):
     name = "weather"
 
-    _grid_cache: dict[str, dict[str, Any]] = PrivateAttr(default_factory=dict)
+    # -- requests -----------------------------------------------------------
 
-    # -- grid point ----------------------------------------------------------
+    def _point_request(self, lat: float, lon: float) -> httpx.Request:
+        return self.build_request("GET", f"{BASE_URL}/points/{lat:.4f},{lon:.4f}")
 
-    @memoize(ttl=3600)
-    def get_point(self, lat: float, lon: float) -> dict | None:
-        request = self.build_request("GET", f"{BASE_URL}/points/{lat:.4f},{lon:.4f}")
-        data = self.response_json(self.send(request))
+    def _stations_request(self, stations_url: str) -> httpx.Request:
+        return self.build_request("GET", stations_url)
+
+    def _observation_request(self, station_id: str) -> httpx.Request:
+        return self.build_request("GET", f"{BASE_URL}/stations/{station_id}/observations/latest")
+
+    def _periods_request(
+        self, office: str, grid_x: int, grid_y: int, path: str, units: str
+    ) -> httpx.Request:
+        url = f"{BASE_URL}/gridpoints/{office}/{grid_x},{grid_y}/{path}"
+        return self.build_request("GET", url, params={"units": units})
+
+    def _gridpoint_request(self, forecast_url: str) -> httpx.Request:
+        return self.build_request("GET", forecast_url, params={"units": "us"})
+
+    def _station_meta_request(self, station_id: str) -> httpx.Request:
+        return self.build_request("GET", f"{BASE_URL}/stations/{station_id}")
+
+    # -- responses ----------------------------------------------------------
+
+    def _point_response(self, response: httpx.Response | None) -> dict | None:
+        data = self.response_json(response)
         return data["properties"] if data else None
 
-    @memoize(ttl=3600)
-    def _station_features(self, lat: float, lon: float) -> list[dict[str, str]]:
+    def _stations_response(self, response: httpx.Response | None) -> list[dict[str, str]]:
         """Nearby observation stations as ``[{"id", "name"}]``, nearest first.
 
         Prefers 4-letter identifiers that don't start with U/C (kept for
         compatibility with the historic ``_observation_stations`` order), but
         also carries each station's display name for the regional tables.
         """
-        point = self.get_point(lat, lon)
-        if not point:
-            return []
-        stations_url = point.get("observationStations")
-        if not stations_url:
-            return []
-        data = self.response_json(self.send(self.build_request("GET", stations_url)))
+        data = self.response_json(response)
         if not data:
             return []
         features = [
@@ -426,6 +439,40 @@ class NoaaWeather(Datasource):
         if not preferred:
             return features
         return preferred + [f for f in features if f not in preferred]
+
+    def _observation_response(
+        self, response: httpx.Response | None, station_name: str = ""
+    ) -> CurrentConditions | None:
+        props = (self.response_json(response) or {}).get("properties")
+        if not props:
+            return None
+        return CurrentConditions.from_props(props, station_name=station_name)
+
+    def _periods_response(self, response: httpx.Response | None) -> list[ForecastPeriod]:
+        data = self.response_json(response) or {}
+        return [
+            ForecastPeriod.from_props(raw)
+            for raw in data.get("properties", {}).get("periods") or []
+        ]
+
+    def _station_meta_response(self, response: httpx.Response | None) -> dict:
+        return self.response_json(response) or {}
+
+    # -- operations ---------------------------------------------------------
+
+    @memoize(ttl=3600)
+    def get_point(self, lat: float, lon: float) -> dict | None:
+        return self.fetch(self._point_request(lat, lon), self._point_response)
+
+    @memoize(ttl=3600)
+    def _station_features(self, lat: float, lon: float) -> list[dict[str, str]]:
+        point = self.get_point(lat, lon)
+        if not point:
+            return []
+        stations_url = point.get("observationStations")
+        if not stations_url:
+            return []
+        return self.fetch(self._stations_request(stations_url), self._stations_response)
 
     def _observation_stations(self, lat: float, lon: float) -> list[str]:
         return [feature["id"] for feature in self._station_features(lat, lon)]
@@ -441,12 +488,11 @@ class NoaaWeather(Datasource):
         self, station_id: str, station_name: str = ""
     ) -> CurrentConditions | None:
         """Latest observation model for one station (cached by station)."""
-        url = f"{BASE_URL}/stations/{station_id}/observations/latest"
-        data = self.response_json(self.send(self.build_request("GET", url)))
-        props = (data or {}).get("properties")
-        if not props:
-            return None
-        return CurrentConditions.from_props(props, station_name=station_name)
+        return self.fetch(
+            self._observation_request(station_id),
+            self._observation_response,
+            station_name=station_name,
+        )
 
     def get_current(self, lat: float, lon: float) -> CurrentConditions | None:
         """Latest observation for the nearest *usable* station.
@@ -513,13 +559,8 @@ class NoaaWeather(Datasource):
         if not grid:
             return []
         office, grid_x, grid_y = grid
-        url = f"{BASE_URL}/gridpoints/{office}/{grid_x},{grid_y}/{path}"
-        request = self.build_request("GET", url, params={"units": units})
-        data = self.response_json(self.send(request)) or {}
-        return [
-            ForecastPeriod.from_props(raw)
-            for raw in data.get("properties", {}).get("periods") or []
-        ]
+        request = self._periods_request(office, grid_x, grid_y, path, units)
+        return self.fetch(request, self._periods_response)
 
     def get_forecast(self, lat: float, lon: float, units: str = "us") -> list[ForecastPeriod]:
         return self._periods(lat, lon, "forecast", units=units)
@@ -532,8 +573,7 @@ class NoaaWeather(Datasource):
     @memoize(ttl=3600)
     def _station_meta(self, station_id: str) -> dict:
         """Full station JSON (top-level ``geometry`` + ``properties``)."""
-        request = self.build_request("GET", f"{BASE_URL}/stations/{station_id}")
-        return self.response_json(self.send(request)) or {}
+        return self.fetch(self._station_meta_request(station_id), self._station_meta_response)
 
     def _station_forecast_url(self, station_id: str) -> str | None:
         """Gridpoint forecast URL for one station, or ``None``.
@@ -560,12 +600,7 @@ class NoaaWeather(Datasource):
     @memoize(ttl=1800)
     def _gridpoint_periods(self, forecast_url: str) -> list[ForecastPeriod]:
         """Parse ``periods`` from an explicit gridpoint forecast URL."""
-        request = self.build_request("GET", forecast_url, params={"units": "us"})
-        data = self.response_json(self.send(request)) or {}
-        return [
-            ForecastPeriod.from_props(raw)
-            for raw in data.get("properties", {}).get("periods") or []
-        ]
+        return self.fetch(self._gridpoint_request(forecast_url), self._periods_response)
 
     def get_regional_forecast(
         self, lat: float, lon: float, limit: int = 7

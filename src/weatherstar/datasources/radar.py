@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 
+import httpx
 import pygame
 
 from weatherstar.datasources.base import Datasource
@@ -64,10 +65,15 @@ class NoaaRadar(Datasource):
 
     # -- fetching -------------------------------------------------------------
 
-    def _fetch_bytes(self, url: str) -> bytes | None:
-        request = self.build_request("GET", url)
-        data = self.response_bytes(self.send(request))
+    def _frame_request(self, url: str) -> httpx.Request:
+        return self.build_request("GET", url)
+
+    def _frame_response(self, response: httpx.Response | None) -> bytes | None:
+        data = self.response_bytes(response)
         return data if data and len(data) > 1000 else None
+
+    def _fetch_bytes(self, url: str) -> bytes | None:
+        return self.fetch(self._frame_request(url), self._frame_response)
 
     @staticmethod
     def _build_frame(data: bytes, lat: float, lon: float) -> pygame.Surface:

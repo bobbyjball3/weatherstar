@@ -84,6 +84,9 @@ config.toml -> AppConfig (config_file.py) -> Builder -> AppContext/DataRegistry
   (component name + per-instance config); the engine binds a component instance
   per spec, and `Screen.draw` steps+renders them then calls `compose`.
   (`sequence.py` sequences are config-declared, not plugins.)
+  Datasources keep request construction (`_<op>_request`) and response reading
+  (`_<op>_response`) in separate methods and pass both to `Datasource.fetch`;
+  decorate the public method with `@memoize(ttl=...)` to cache it.
 - `context.py` — `AppContext`, `DataRegistry`, `Location`.
 - `engine.py` — `Builder` (build runtime from config) + `run_sequence` /
   `SequenceRunner` (render + headless validate).

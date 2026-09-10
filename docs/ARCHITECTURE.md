@@ -90,23 +90,34 @@ through the context.
 ### Datasources
 
 `Datasource` (in `datasources/base.py`) is a `Plugin` that owns every
-cross-cutting HTTP concern and splits a fetch into readable steps:
+cross-cutting HTTP concern. Each operation is written as two pure methods — one
+that builds the request, one that reads the response — and the base's `fetch`
+owns the transport:
 
-- `build_request(method, url, params=..., json=...)` builds an
-  `httpx.Request`, merging the configured `headers` / `query`;
-- `send(request)` performs the request (timeout, status logging, graceful
-  `None` on transport/HTTP failure) — a datasource never touches the client;
+- `build_request(method, url, params=..., json=...)` builds an `httpx.Request`,
+  merging the configured `headers` / `query`;
+- `fetch(request, process, **context)` sends it (`send`) and returns
+  `process(response, **context)`. `send` handles timeout, status logging and
+  graceful `None` on transport/HTTP failure — a datasource never touches the
+  client;
 - `response_json(response)` / `response_bytes(response)` read the body.
 
-A method composes these and is cached with the base-vended `@memoize`
-decorator:
+A datasource keeps the two halves in named methods and caches the result with
+the base-vended `@memoize` decorator:
 
 ```python
-@memoize(ttl=1800)
-def get_forecast(self, lat, lon):
-    response = self.send(self.build_request("GET", url, params={"units": "us"}))
+def _forecast_request(self, url: str) -> httpx.Request:
+    return self.build_request("GET", url, params={"units": "us"})
+
+
+def _forecast_response(self, response) -> list[ForecastPeriod]:
     data = self.response_json(response) or {}
     return [ForecastPeriod.from_props(r) for r in data["properties"]["periods"]]
+
+
+@memoize(ttl=1800)
+def get_forecast(self, lat, lon):
+    return self.fetch(self._forecast_request(url), self._forecast_response)
 ```
 
 The cache key is `(method, arguments)` — a stable *logical* key, independent of
