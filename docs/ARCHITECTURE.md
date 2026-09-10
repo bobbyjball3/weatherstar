@@ -132,6 +132,22 @@ Auth and headers are declared as config: `headers` / `query` are
 `dict[str, SecretStr]`, unwrapped only at the HTTP boundary
 (`get_secret_value()`), so nothing sensitive leaks into `repr` or logs.
 
+### Weather provider map
+
+Weather data is split across two public providers by requirement; each feed is
+served by whichever source actually has it:
+
+| Requirement | Provider |
+| --- | --- |
+| current conditions, daily/hourly forecast, nearby observations, regional forecast, city label, alerts | NWS (`api.weather.gov`) |
+| radar loop | NWS RIDGE (`radar.weather.gov`) |
+| UV index, 30-day temperature/precipitation history | Open-Meteo |
+
+NWS is the only source with a nearby-station network and human-readable forecast
+text/icons; Open-Meteo covers the two datasets NWS does not publish (UV and
+daily history). There is no third "everything" API — replacing NWS wholesale
+would drop the multi-station screens, so the split is intentional.
+
 ## Registry and discovery
 
 `registry.py` holds a process-wide `PluginRegistry` mapping

@@ -339,12 +339,6 @@ class _Radar:
             frames.append(surface)
         return frames
 
-    def frame_times(self, lat, lon):
-        from datetime import datetime, timedelta, timezone
-
-        base = datetime(2026, 9, 10, 14, 0, tzinfo=timezone.utc)
-        return [base + timedelta(minutes=15 * i) for i in range(2)]
-
 
 def _registry(weather=None) -> DataRegistry:
     data = DataRegistry()

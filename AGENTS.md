@@ -189,8 +189,8 @@ Datasources speak realistic payloads so screens can be driven headlessly:
   `headlines` → `[(title, url)]`.
 - `alerts.active` → list of dicts with `severity` (capitalized!),
   `event`, `headline`, `areas`, `instruction`, `expires` (ISO).
-- `radar.frames` → list of `pygame.Surface`; `radar.frame_times` → one UTC
-  `datetime` per frame, aligned with `frames` (future-radar valid times).
+- `radar.frames` → list of `pygame.Surface` (NWS RIDGE CONUS stills, oldest
+  first; empty offline).
 
 **Screens are defensive:** they wrap every datasource read and degrade to a
 "NO DATA" / centered message rather than raising. When adding a screen, follow

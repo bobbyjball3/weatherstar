@@ -52,9 +52,8 @@ and I want to be clear about whose shoulders it stands on.
 The on-screen weather, history and news content comes from free/public data
 providers rather than anything we host:
 
-- **NOAA / National Weather Service** (`api.weather.gov`) — current conditions,
-  forecasts, hourly data and alerts.
-- **Iowa Environmental Mesonet** — NOAA HRRR future-radar reflectivity frames.
+- **NOAA / National Weather Service** (`api.weather.gov`, `radar.weather.gov`) —
+  current conditions, forecasts, hourly data, alerts and the radar loop.
 - **Open-Meteo** — 30-day temperature/precipitation history and UV index.
 - **USGS Earthquake Hazards Program** — recent earthquakes.
 - **Alpha Vantage** — stock and index quotes (requires a free API key).
