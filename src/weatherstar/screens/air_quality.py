@@ -57,7 +57,7 @@ class AirQualityScreen(Screen):
         right_x = 350
         y_pos = 120
 
-        self.blit_text(
+        self.draw_text(
             surface, ctx, "AIR QUALITY INDEX", (left_x, y_pos), font_name="normal", color=yellow
         )
         y_pos += 30
@@ -82,7 +82,7 @@ class AirQualityScreen(Screen):
             ("101-150", "Sensitive Groups", _ORANGE),
         ]
         for range_txt, desc, color in scale:
-            self.blit_text(
+            self.draw_text(
                 surface,
                 ctx,
                 f"{range_txt}: {desc}",
@@ -93,7 +93,7 @@ class AirQualityScreen(Screen):
             y_pos += 26
 
         pollen_y = 120
-        self.blit_text(
+        self.draw_text(
             surface, ctx, "POLLEN COUNT", (right_x, pollen_y), font_name="normal", color=yellow
         )
         pollen_y += 30
@@ -105,7 +105,7 @@ class AirQualityScreen(Screen):
             ("Mold", "HIGH"),
         ]
         for pollen_type, level in pollen_data:
-            self.blit_text(
+            self.draw_text(
                 surface, ctx, f"{pollen_type}:", (right_x, pollen_y), font_name="tiny", color=white
             )
 
@@ -121,7 +121,7 @@ class AirQualityScreen(Screen):
             pygame.draw.rect(surface, color, (bar_x, pollen_y + 2, bar_width, 12))
 
             text_x = bar_x + bar_width + 10
-            self.blit_text(surface, ctx, level, (text_x, pollen_y), font_name="tiny", color=color)
+            self.draw_text(surface, ctx, level, (text_x, pollen_y), font_name="tiny", color=color)
             pollen_y += 25
 
         y_pos = max(y_pos, pollen_y) + 20
@@ -164,7 +164,7 @@ class AirQualityScreen(Screen):
             if font_tiny.size(tip)[0] > _MAX_TIP_WIDTH:
                 for line in self.wrap(font_tiny, tip, _MAX_TIP_WIDTH):
                     if 0 < tip_y < 440:
-                        self.blit_text(
+                        self.draw_text(
                             surface,
                             ctx,
                             f"\u2022 {line}",
@@ -175,7 +175,7 @@ class AirQualityScreen(Screen):
                     tip_y += 20
             else:
                 if 0 < tip_y < 440:
-                    self.blit_text(
+                    self.draw_text(
                         surface, ctx, f"\u2022 {tip}", (70, tip_y), font_name="tiny", color=white
                     )
                 tip_y += 22

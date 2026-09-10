@@ -12,7 +12,11 @@ from datetime import datetime
 import pygame
 
 from weatherstar.context import AppContext
-from weatherstar.renderer import blit_text_shadowed
+from weatherstar.renderer import Renderer, blit_text_shadowed
+
+#: Stateless renderer for the module-level helpers below (they predate the
+#: Renderer mixin and are used by non-Screen callers such as the engine).
+_RENDERER = Renderer()
 
 
 def draw_background(surface: pygame.Surface, ctx: AppContext, name: str = "1") -> None:
@@ -158,11 +162,9 @@ def draw_centered_text(
     color_key: str = "white",
     center_x: int | None = None,
 ) -> pygame.Rect:
-    font = ctx.fonts.get(font_name, pygame.font.Font(None, 20))
-    color = ctx.colors[color_key]
-    width = surface.get_width() if center_x is None else 2 * center_x
-    rect = font.render(text, True, color).get_rect(center=(width // 2, y))
-    return blit_text_shadowed(surface, ctx, font, text, color, rect)
+    return _RENDERER.centered(
+        surface, ctx, text, y, font_name=font_name, color_key=color_key, center_x=center_x
+    )
 
 
 def draw_text(
@@ -173,6 +175,4 @@ def draw_text(
     font_name: str = "small",
     color_key: str = "white",
 ) -> pygame.Rect:
-    font = ctx.fonts.get(font_name, pygame.font.Font(None, 20))
-    color = ctx.colors[color_key]
-    return blit_text_shadowed(surface, ctx, font, text, color, pos)
+    return _RENDERER.draw_text(surface, ctx, text, pos, font_name=font_name, color_key=color_key)

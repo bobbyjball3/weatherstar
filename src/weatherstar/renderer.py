@@ -331,28 +331,6 @@ class Renderer:
         fg = color if color is not None else self.color(ctx, color_key)
         return blit_text_shadowed(surface, ctx, self.font(ctx, font_name), text, fg, pos)
 
-    def blit_text(
-        self,
-        surface: pygame.Surface,
-        ctx: Any,
-        text: str,
-        pos,
-        *,
-        font_name: str = "normal",
-        color_key: str = "white",
-        color: tuple[int, int, int] | None = None,
-    ) -> pygame.Rect:
-        """Render ``text`` at ``pos`` (a position or rect) and return its rect."""
-        return self.draw_text(
-            surface,
-            ctx,
-            text,
-            pos,
-            font_name=font_name,
-            color_key=color_key,
-            color=color,
-        )
-
     # -- context / datasource access -------------------------------------
 
     def datasource(self, ctx: Any, name: str) -> Any:
@@ -426,15 +404,6 @@ class Renderer:
         return blit_text_shadowed(surface, ctx, font, text, fg, rect)
 
     # -- value conversions ------------------------------------------------
-
-    def fahrenheit(self, celsius: float | None) -> int | None:
-        """Convert °C to °F; returns ``None`` for unusable input."""
-        if celsius is None:
-            return None
-        try:
-            return int(celsius * 9 / 5 + 32)
-        except (TypeError, ValueError):
-            return None
 
     def cardinal(self, degrees: float | None, default: str = "") -> str:
         """Compass point for a heading in degrees ('' when unusable)."""

@@ -18,6 +18,20 @@ from weatherstar.logging_setup import get_logger
 from weatherstar.plugin import Plugin
 
 
+def coerce_float(value: Any) -> float | None:
+    """Coerce a bare/string number (possibly ``%``/comma formatted) to float."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = value.replace("%", "").replace(",", "").strip()
+        if not value:
+            return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 class Datasource(Plugin):
     """Base class for plugin datasources.
 
@@ -55,43 +69,14 @@ class Datasource(Plugin):
         return self._session
 
     def _apply_auth(self, session: requests.Session) -> None:
-        """Attach auth derived from sensitive config fields.
+        """Attach auth derived from sensitive config fields (overridable).
 
-        Overridable.  Supported schemes: a ``headers`` mapping, a ``token``
-        (sent as ``Authorization: Bearer``), a username/password (basic auth),
-        or an ``api_key`` either in a named ``api_key_header`` or as a per-request
-        ``api_key_param`` (defaults to the ``X-API-Key`` header).
+        The base is a no-op; datasources with session-level auth (e.g. a
+        Bearer token) override it.
         """
-        fields = type(self).model_fields
-
-        def has(name: str) -> bool:
-            return name in fields
-
-        def get(name: str) -> Any:
-            if not has(name):
-                return None
-            value = getattr(self, name, None)
-            if isinstance(value, SecretStr):
-                value = value.get_secret_value()
-            return value
-
-        if has("headers") and get("headers"):
-            session.headers.update(get("headers"))
-
-        token = get("token")
-        if token:
-            session.headers.update({"Authorization": f"Bearer {token}"})
-
-        username, password = get("username"), get("password")
-        if username is not None and password is not None:
-            session.auth = (username, password)
-
-        # Query-param style keys are injected per-request in _query_params.
-        if has("api_key") and get("api_key") and not get("api_key_param"):
-            header_name = get("api_key_header") or "X-API-Key"
-            session.headers.update({header_name: get("api_key")})
 
     def _query_params(self, params: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Inject an ``api_key`` query parameter when the datasource declares one."""
         fields = type(self).model_fields
         if "api_key_param" not in fields or "api_key" not in fields:
             return params

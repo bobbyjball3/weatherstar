@@ -25,7 +25,7 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-from weatherstar.datasources.base import Datasource
+from weatherstar.datasources.base import Datasource, coerce_float
 from weatherstar.registry import plugin
 
 BASE_URL = "https://api.weather.gov"
@@ -41,34 +41,17 @@ def _c_to_f_int(celsius: float) -> int:
     return round(celsius * 9 / 5 + 32)
 
 
-def _parse_float(value: Any) -> float | None:
-    """Coerce an arbitrary value to float; returns None when unusable."""
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _noaa_number(props: Any, key: str) -> float | None:
+def _noaa_number(props: dict, key: str) -> float | None:
     """Read a NOAA observation quantity (``{"value": ...}`` or bare scalar)."""
-    if not isinstance(props, dict):
-        return None
     raw = props.get(key)
-    if isinstance(raw, dict):
-        raw = raw.get("value")
-    return _parse_float(raw)
+    return coerce_float(raw.get("value") if isinstance(raw, dict) else raw)
 
 
 def _parse_time(value: Any) -> datetime | None:
     """Parse an ISO timestamp (``Z`` or numeric offset) to an aware datetime."""
     if not value:
         return None
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return None
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
 
 
 class CloudLayer(BaseModel):
@@ -203,19 +186,15 @@ class CurrentConditions(BaseModel):
 
     @classmethod
     def from_props(cls, props: dict, station_name: str = "") -> CurrentConditions:
-        """Build from a NOAA observation ``properties`` dict (defensively)."""
+        """Build from a NOAA observation ``properties`` dict."""
         ceiling_ft: int | None = None
         cloud_layers: list[CloudLayer] = []
-        raw_layers = props.get("cloudLayers") or []
-        if isinstance(raw_layers, list):
-            for raw in raw_layers:
-                if not isinstance(raw, dict):
-                    continue
-                amount = str(raw.get("amount") or "")
-                base_m = _noaa_number(raw, "base")
-                cloud_layers.append(CloudLayer(amount=amount, base_m=base_m))
-                if ceiling_ft is None and amount in ("BKN", "OVC") and base_m is not None:
-                    ceiling_ft = int(base_m * _M_TO_FT)
+        for raw in props.get("cloudLayers") or []:
+            amount = str(raw.get("amount") or "")
+            base_m = _noaa_number(raw, "base")
+            cloud_layers.append(CloudLayer(amount=amount, base_m=base_m))
+            if ceiling_ft is None and amount in ("BKN", "OVC") and base_m is not None:
+                ceiling_ft = int(base_m * _M_TO_FT)
 
         pressure = _noaa_number(props, "barometricPressure")
         if pressure is None:
@@ -293,12 +272,12 @@ class ForecastPeriod(BaseModel):
 
     @classmethod
     def from_props(cls, props: dict) -> ForecastPeriod:
-        """Build from a NOAA forecast period dict (defensively)."""
+        """Build from a NOAA forecast period dict."""
         return cls(
             name=str(props.get("name") or ""),
             start_time=_parse_time(props.get("startTime")),
             is_daytime=bool(props.get("isDaytime")),
-            temperature=_parse_float(props.get("temperature")),
+            temperature=coerce_float(props.get("temperature")),
             short_forecast=str(props.get("shortForecast") or ""),
             detailed_forecast=str(props.get("detailedForecast") or ""),
             icon=str(props.get("icon") or ""),
@@ -338,21 +317,11 @@ class RegionalForecast(BaseModel):
 
     @property
     def high_f(self) -> int | None:
-        if self.high is None:
-            return None
-        try:
-            return int(round(self.high))
-        except (TypeError, ValueError):
-            return None
+        return None if self.high is None else int(round(self.high))
 
     @property
     def low_f(self) -> int | None:
-        if self.low is None:
-            return None
-        try:
-            return int(round(self.low))
-        except (TypeError, ValueError):
-            return None
+        return None if self.low is None else int(round(self.low))
 
 
 #: Common trailing tokens stripped from NOAA station display names so regional
@@ -434,11 +403,11 @@ class NoaaWeather(Datasource):
             return cached
         url = f"{BASE_URL}/points/{lat:.4f},{lon:.4f}"
         data = self.http_get_json(url)
-        if data and "properties" in data:
-            props = data["properties"]
-            self.cache_set(key, props)
-            return props
-        return None
+        if not data:
+            return None
+        props = data["properties"]
+        self.cache_set(key, props)
+        return props
 
     def _station_features(self, lat: float, lon: float) -> list[dict[str, str]]:
         """Nearby observation stations as ``[{"id", "name"}]``, nearest first.
@@ -459,17 +428,15 @@ class NoaaWeather(Datasource):
             return cached
         data = self.http_get_json(stations_url)
         features: list[dict[str, str]] = []
-        if data and "features" in data:
+        if data:
             for feature in data["features"]:
-                props = feature.get("properties") or {}
-                station_id = props.get("stationIdentifier")
-                if station_id:
-                    features.append(
-                        {
-                            "id": station_id,
-                            "name": clean_station_name(props.get("name") or ""),
-                        }
-                    )
+                props = feature["properties"]
+                features.append(
+                    {
+                        "id": props["stationIdentifier"],
+                        "name": clean_station_name(props.get("name") or ""),
+                    }
+                )
             preferred = [f for f in features if len(f["id"]) == 4 and f["id"][0] not in "UC"]
             if preferred:
                 features = preferred + [f for f in features if f not in preferred]
@@ -494,8 +461,7 @@ class NoaaWeather(Datasource):
         if cached is not None:
             return cached
         url = f"{BASE_URL}/stations/{station_id}/observations/latest"
-        data = self.http_get_json(url)
-        props = data.get("properties") if isinstance(data, dict) else None
+        props = (self.http_get_json(url) or {}).get("properties")
         if not props:
             return None
         observation = CurrentConditions.from_props(props, station_name=station_name)
@@ -572,13 +538,11 @@ class NoaaWeather(Datasource):
         if cached is not None:
             return cached
         url = f"{BASE_URL}/gridpoints/{office}/{grid_x},{grid_y}/{path}"
-        data = self.http_get_json(url, params={"units": units})
-        periods: list[ForecastPeriod] = []
-        if data:
-            props = data.get("properties") or {}
-            for raw in props.get("periods") or []:
-                if isinstance(raw, dict):
-                    periods.append(ForecastPeriod.from_props(raw))
+        data = self.http_get_json(url, params={"units": units}) or {}
+        periods = [
+            ForecastPeriod.from_props(raw)
+            for raw in data.get("properties", {}).get("periods") or []
+        ]
         self.cache_set(key, periods)
         return periods
 
@@ -597,7 +561,7 @@ class NoaaWeather(Datasource):
         if cached is not None:
             return cached
         data = self.http_get_json(f"{BASE_URL}/stations/{station_id}")
-        payload = data if isinstance(data, dict) else {}
+        payload = data or {}
         self.cache_set(key, payload)
         return payload
 
@@ -614,19 +578,14 @@ class NoaaWeather(Datasource):
         meta = self._station_meta(station_id)
         if not meta:
             return None
-        coords = ((meta.get("geometry") or {}).get("coordinates")) or []
+        coords = (meta.get("geometry") or {}).get("coordinates") or []
         if len(coords) >= 2:
-            try:
-                point = self.get_point(float(coords[1]), float(coords[0]))
-            except (TypeError, ValueError):
-                point = None
+            point = self.get_point(coords[1], coords[0])
             forecast = (point or {}).get("forecast")
             if forecast:
                 return forecast
-        forecast = str(((meta.get("properties") or {}).get("forecast")) or "")
-        if "/gridpoints/" in forecast:
-            return forecast
-        return None
+        forecast = (meta.get("properties") or {}).get("forecast") or ""
+        return forecast if "/gridpoints/" in forecast else None
 
     def _gridpoint_periods(self, forecast_url: str) -> list[ForecastPeriod]:
         """Parse ``periods`` from an explicit gridpoint forecast URL."""
@@ -634,13 +593,11 @@ class NoaaWeather(Datasource):
         cached = self.cache_get(key, 1800)
         if cached is not None:
             return cached
-        data = self.http_get_json(forecast_url, params={"units": "us"})
-        periods: list[ForecastPeriod] = []
-        if isinstance(data, dict):
-            props = data.get("properties") or {}
-            for raw in props.get("periods") or []:
-                if isinstance(raw, dict):
-                    periods.append(ForecastPeriod.from_props(raw))
+        data = self.http_get_json(forecast_url, params={"units": "us"}) or {}
+        periods = [
+            ForecastPeriod.from_props(raw)
+            for raw in data.get("properties", {}).get("periods") or []
+        ]
         self.cache_set(key, periods)
         return periods
 
@@ -678,7 +635,4 @@ class NoaaWeather(Datasource):
         return City(city=str(props.get("city") or ""), state=str(props.get("state") or ""))
 
     def get_radar_station(self, lat: float, lon: float) -> str | None:
-        point = self.get_point(lat, lon)
-        if point:
-            return point.get("radarStation")
-        return None
+        return (self.get_point(lat, lon) or {}).get("radarStation")

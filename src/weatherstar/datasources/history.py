@@ -13,21 +13,12 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-from weatherstar.datasources.base import Datasource
+from weatherstar.datasources.base import Datasource, coerce_float
 from weatherstar.registry import plugin
 
 _HISTORY_URL = "https://api.open-meteo.com/v1/forecast"
 _DAILY = "temperature_2m_max,temperature_2m_min,precipitation_sum"
 _CACHE_TTL = 3600
-
-
-def _as_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 class TemperatureRow(BaseModel):
@@ -98,8 +89,8 @@ class HistoryDatasource(Datasource):
             rows.append(
                 TemperatureRow(
                     date=str(dates[i]),
-                    high=_as_float(highs[i]) if i < len(highs) else None,
-                    low=_as_float(lows[i]) if i < len(lows) else None,
+                    high=coerce_float(highs[i]),
+                    low=coerce_float(lows[i]),
                 )
             )
         return rows
@@ -111,8 +102,7 @@ class HistoryDatasource(Datasource):
         amounts = daily.get("precipitation_sum") or []
         rows: list[PrecipRow] = []
         for i in range(len(dates) - 1, -1, -1):
-            amount = _as_float(amounts[i]) if i < len(amounts) else 0.0
-            rows.append(PrecipRow(date=str(dates[i]), inches=amount if amount else 0.0))
+            rows.append(PrecipRow(date=str(dates[i]), inches=coerce_float(amounts[i]) or 0.0))
         return rows
 
     # -- scrolling -----------------------------------------------------------

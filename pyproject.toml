@@ -8,12 +8,9 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "colorama>=0.4.6",
     "ephem>=4.1.0",
-    "pillow==12.2.0",
     "pydantic>=2.0",
     "pygame==2.6.1",
-    "pyttsx3>=2.90",
     "requests==2.33.0",
     "structlog>=26.1.0",
     "tomli>=2.0 ; python_full_version < '3.11'",

@@ -80,9 +80,6 @@ class AppContext:
 
     # -- conveniences -------------------------------------------------------
 
-    def get_color(self, key: str) -> tuple[int, int, int]:
-        return self.colors.get(key, (255, 255, 255))
-
     @property
     def colors(self) -> dict[str, tuple[int, int, int]]:
         """Theme colors merged over the minimal base palette.
@@ -103,49 +100,7 @@ class AppContext:
         """Return one layout token for the active screen, or ``default``."""
         return self.layout_for(name).get(key, default)
 
-    @property
-    def shadow_colors(self) -> tuple[int, int, int] | None:
-        """Black shadow color when the theme requests text shadows, else None."""
-        if not self.theme.text_shadow:
-            return None
-        return self.theme.colors.get("black", (0, 0, 0))
-
-    def font(self, name: str) -> pygame.font.Font:
-        try:
-            return self.fonts[name]
-        except KeyError:
-            raise KeyError(
-                f"No font named {name!r}. Available: {', '.join(sorted(self.fonts)) or '(none)'}"
-            ) from None
-
-    def asset(self, name: str) -> Any:
-        try:
-            return self.assets[name]
-        except KeyError:
-            raise KeyError(
-                f"No asset named {name!r}. Available: {', '.join(sorted(self.assets)) or '(none)'}"
-            ) from None
-
     def size(self) -> tuple[int, int]:
         if self.surface is None:
             return (0, 0)
         return self.surface.get_size()
-
-    def width(self) -> int:
-        return self.size()[0]
-
-    def height(self) -> int:
-        return self.size()[1]
-
-    def clone(self, *, surface: pygame.Surface | None = None) -> AppContext:
-        """Return a shallow copy bound to a (possibly new) surface."""
-        return AppContext(
-            surface=surface if surface is not None else self.surface,
-            theme=self.theme,
-            fonts=self.fonts,
-            assets=self.assets,
-            data=self.data,
-            icon_manager=self.icon_manager,
-            location=self.location,
-            active_screen=self.active_screen,
-        )

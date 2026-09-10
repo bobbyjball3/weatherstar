@@ -48,7 +48,7 @@ class SunMoonScreen(Screen):
         right_col_x = 335
         y_pos = 120
 
-        self.blit_text(surface, ctx, "SUN", (left_col_x, y_pos), font_name="normal", color=yellow)
+        self.draw_text(surface, ctx, "SUN", (left_col_x, y_pos), font_name="normal", color=yellow)
         sun_y = y_pos + 30
 
         now = datetime.now()
@@ -72,7 +72,7 @@ class SunMoonScreen(Screen):
             self._draw_row(surface, ctx, label, value, left_col_x, sun_y, white, yellow, 110)
             sun_y += 24
 
-        self.blit_text(surface, ctx, "MOON", (right_col_x, y_pos), font_name="normal", color=yellow)
+        self.draw_text(surface, ctx, "MOON", (right_col_x, y_pos), font_name="normal", color=yellow)
         moon_y = y_pos + 30
 
         moon_age = now.day % 30

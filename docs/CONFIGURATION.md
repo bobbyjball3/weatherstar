@@ -172,8 +172,6 @@ user_agent = "weatherstar (python)"
 # api_key = "value"
 # Query parameter the API key is sent under.
 api_key_param = "apikey"
-# Header the API key is sent under instead (leave blank to use the query parameter).
-api_key_header = ""
 # Comma-separated stock/index symbols to display.
 symbols = "DIA,SPY,QQQ"
 

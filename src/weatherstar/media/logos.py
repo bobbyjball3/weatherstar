@@ -1,7 +1,7 @@
 """Logos media: registers a dict of logo surfaces keyed by stem.
 
 Loads ``<asset_dir>/logos/*.png|*.gif``.  Screens look up e.g.
-``ctx.asset("logos")["logo-corner"]``.
+``ctx.assets["logos"]["logo-corner"]``.
 """
 
 from __future__ import annotations

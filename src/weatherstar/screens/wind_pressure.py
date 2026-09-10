@@ -52,14 +52,14 @@ class WindPressureScreen(Screen):
             return
 
         y_pos = 120
-        self.blit_text(
+        self.draw_text(
             surface, ctx, "WIND CONDITIONS", (60, y_pos), font_name="extended", color=yellow
         )
         y_pos += 35
 
         wind_mph = current.wind_mph
         if wind_mph is not None:
-            self.blit_text(
+            self.draw_text(
                 surface, ctx, f"Speed: {wind_mph} mph", (80, y_pos), font_name="normal", color=white
             )
             y_pos += 30
@@ -67,7 +67,7 @@ class WindPressureScreen(Screen):
         wind_dir = current.wind_direction
         if wind_dir is not None:
             dir_text = self.cardinal(wind_dir)
-            self.blit_text(
+            self.draw_text(
                 surface,
                 ctx,
                 f"Direction: {dir_text} ({wind_dir:.0f}\u00b0)",
@@ -79,7 +79,7 @@ class WindPressureScreen(Screen):
 
         wind_gust_mph = current.wind_gust_mph
         if wind_gust_mph is not None:
-            self.blit_text(
+            self.draw_text(
                 surface,
                 ctx,
                 f"Gusts: {wind_gust_mph} mph",
@@ -93,7 +93,7 @@ class WindPressureScreen(Screen):
         heat_index_f = current.heat_index_f
         if wind_chill_f is not None:
             blue = colors.get("blue", (128, 128, 255))
-            self.blit_text(
+            self.draw_text(
                 surface,
                 ctx,
                 f"Wind Chill: {wind_chill_f}\u00b0F",
@@ -103,7 +103,7 @@ class WindPressureScreen(Screen):
             )
             y_pos += 30
         elif heat_index_f is not None:
-            self.blit_text(
+            self.draw_text(
                 surface,
                 ctx,
                 f"Heat Index: {heat_index_f}\u00b0F",
@@ -114,14 +114,14 @@ class WindPressureScreen(Screen):
             y_pos += 30
 
         y_pos += 20
-        self.blit_text(
+        self.draw_text(
             surface, ctx, "BAROMETRIC PRESSURE", (60, y_pos), font_name="extended", color=yellow
         )
         y_pos += 35
 
         pressure_inhg = current.pressure_inhg
         if pressure_inhg is not None:
-            self.blit_text(
+            self.draw_text(
                 surface,
                 ctx,
                 f"Current: {pressure_inhg:.2f} in",

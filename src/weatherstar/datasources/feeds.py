@@ -12,26 +12,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from weatherstar.datasources.base import Datasource
+from weatherstar.datasources.base import Datasource, coerce_float
 from weatherstar.registry import plugin
 
 NOAA_ALERTS_URL = "https://api.weather.gov/alerts/active"
 USGS_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query"
 OM_UV_URL = "https://api.open-meteo.com/v1/forecast"
-
-
-def _as_float(value) -> float | None:
-    """Coerce a bare/string number (possibly ``%``/comma formatted) to float."""
-    if value is None:
-        return None
-    if isinstance(value, str):
-        value = value.replace("%", "").replace(",", "").strip()
-        if not value:
-            return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 class Alert(BaseModel):
@@ -94,10 +80,9 @@ class UvReading(BaseModel):
 
 
 def _parse_alerts(data: dict) -> list[Alert]:
-    features = data.get("features") or []
     result: list[Alert] = []
-    for feature in features:
-        props = feature.get("properties") or {}
+    for feature in data.get("features") or []:
+        props = feature["properties"]
         severity = props.get("severity")
         if severity not in {"Extreme", "Severe", "Moderate"}:
             continue
@@ -166,24 +151,17 @@ class EarthquakesDatasource(Datasource):
             "orderby": "time",
         }
         data = self.http_get_json(USGS_URL, params=params, timeout=10)
-        events = (data or {}).get("features") or []
         result: list[Earthquake] = []
-        for e in events:
-            props = e.get("properties")
-            if not props:
-                continue
-            time_ms = _as_float(props.get("time"))
-            occurred = None
-            if time_ms is not None:
-                try:
-                    occurred = datetime.utcfromtimestamp(time_ms / 1000.0)
-                except (OverflowError, OSError, ValueError):
-                    occurred = None
+        for event in (data or {}).get("features") or []:
+            props = event["properties"]
+            time_ms = coerce_float(props.get("time"))
             result.append(
                 Earthquake(
-                    magnitude=_as_float(props.get("mag")) or 0.0,
+                    magnitude=coerce_float(props.get("mag")) or 0.0,
                     place=str(props.get("place") or ""),
-                    time=occurred,
+                    time=(
+                        datetime.utcfromtimestamp(time_ms / 1000.0) if time_ms is not None else None
+                    ),
                 )
             )
         self.cache_set(key, result)
@@ -213,7 +191,8 @@ class UvIndexDatasource(Datasource):
         dates = daily.get("time") or []
         values = daily.get("uv_index_max") or []
         result = [
-            UvReading(date=str(dates[i]), uv_index=_as_float(values[i])) for i in range(len(dates))
+            UvReading(date=str(dates[i]), uv_index=coerce_float(values[i]))
+            for i in range(len(dates))
         ]
         self.cache_set(key, result)
         return result
@@ -245,10 +224,6 @@ class StockMarketDatasource(Datasource):
     )
     api_key_param: str = Field(
         default="apikey", description="Query parameter the API key is sent under."
-    )
-    api_key_header: str | None = Field(
-        default=None,
-        description="Header the API key is sent under instead (leave blank to use the query parameter).",
     )
     symbols: str = Field(
         default="DIA,SPY,QQQ", description="Comma-separated stock/index symbols to display."
@@ -282,7 +257,7 @@ class StockMarketDatasource(Datasource):
         quote = (data or {}).get("Global Quote") or {}
         if not quote:
             return None
-        change = _as_float(quote.get("09. change"))
+        change = coerce_float(quote.get("09. change"))
         direction: Literal["up", "down", "flat"] = "flat"
         if change is not None and change > 0:
             direction = "up"
@@ -290,9 +265,9 @@ class StockMarketDatasource(Datasource):
             direction = "down"
         result = Quote(
             symbol=str(quote.get("01. symbol", symbol)),
-            price=_as_float(quote.get("05. price")),
+            price=coerce_float(quote.get("05. price")),
             change=change,
-            change_percent=_as_float(quote.get("10. change percent")),
+            change_percent=coerce_float(quote.get("10. change percent")),
             direction=direction,
         )
         self.cache_set(key, result)

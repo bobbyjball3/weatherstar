@@ -48,13 +48,6 @@ def test_from_config_required_missing_raises_with_example():
     assert "api_key = " in message  # example snippet present
 
 
-def test_default_config_includes_required_placeholder():
-    assert Widget.default_config() == {"timeout": 10, "retries": 0}
-    assert Widget.required_keys() == ()
-    assert KeyedWidget.default_config() == {"api_key": "<required>"}
-    assert KeyedWidget.required_keys() == ("api_key",)
-
-
 def test_config_scope_builds_kind_dot_name():
     assert Widget.config_scope() == "widget.sample"
 
@@ -75,10 +68,6 @@ def test_repr_masks_sensitive_values():
 
 def test_str_is_safe_for_sensitive():
     assert "topsecret" not in str(SecretWidget())
-
-
-def test_secret_default_never_emitted_by_default_config():
-    assert SecretWidget.default_config()["api_key"] == "<required>"
 
 
 def test_extra_scope_keys_not_treated_as_fields():

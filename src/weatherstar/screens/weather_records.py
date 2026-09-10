@@ -65,14 +65,14 @@ class WeatherRecordsScreen(Screen):
         ]
 
         for label, value in records:
-            self.blit_text(surface, ctx, f"{label}:", (120, y_pos), font_name="normal", color=white)
-            self.blit_text(surface, ctx, value, (350, y_pos), font_name="normal", color=yellow)
+            self.draw_text(surface, ctx, f"{label}:", (120, y_pos), font_name="normal", color=white)
+            self.draw_text(surface, ctx, value, (350, y_pos), font_name="normal", color=yellow)
             y_pos += row_step
 
         section_gap = int(self.layout_token(ctx, "section_gap", 12))
         heading_gap = int(self.layout_token(ctx, "heading_gap", 30))
         y_pos += section_gap
-        self.blit_text(
+        self.draw_text(
             surface,
             ctx,
             "THIS DAY IN WEATHER HISTORY",
@@ -83,4 +83,4 @@ class WeatherRecordsScreen(Screen):
         y_pos += heading_gap
 
         history_text = "1992: Hurricane Andrew made landfall in Florida"
-        self.blit_text(surface, ctx, history_text, (80, y_pos), font_name="small", color=white)
+        self.draw_text(surface, ctx, history_text, (80, y_pos), font_name="small", color=white)

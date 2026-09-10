@@ -3,19 +3,14 @@
 import time
 
 import requests
-from pydantic import Field, SecretStr
+from pydantic import SecretStr
 
 from weatherstar.datasources.base import Datasource
 
 
 class AuthDS(Datasource):
-    headers: dict = Field(default_factory=dict)
-    token: SecretStr | None = None
-    username: str | None = None
-    password: SecretStr | None = None
     api_key: SecretStr | None = None
     api_key_param: str | None = None
-    api_key_header: str | None = None
 
 
 def _auth(**values) -> AuthDS:
@@ -54,42 +49,6 @@ def _make_session(ds, response=None):
     sess = _Sess(response or _Resp({"ok": True}))
     ds._session_for = lambda: sess  # noqa: B023
     return sess
-
-
-def test_apply_auth_headers_and_bearer_token():
-    ds = _auth(headers={"X-Custom": "1"}, token="tok")
-    sess = _make_session(ds)
-    ds._apply_auth(sess)
-    assert sess.headers["X-Custom"] == "1"
-    assert sess.headers["Authorization"] == "Bearer tok"
-
-
-def test_apply_auth_basic():
-    ds = _auth(username="u", password="p")
-    sess = _make_session(ds)
-    ds._apply_auth(sess)
-    assert sess.auth == ("u", "p")
-
-
-def test_apply_auth_api_key_as_header():
-    ds = _auth(api_key="k", api_key_header="X-Key")
-    sess = _make_session(ds)
-    ds._apply_auth(sess)
-    assert sess.headers["X-Key"] == "k"
-
-
-def test_apply_auth_api_key_default_header_when_no_param():
-    ds = _auth(api_key="k")
-    sess = _make_session(ds)
-    ds._apply_auth(sess)
-    assert sess.headers["X-API-Key"] == "k"
-
-
-def test_apply_auth_skips_header_when_query_param_used():
-    ds = _auth(api_key="k", api_key_param="apikey")
-    sess = _make_session(ds)
-    ds._apply_auth(sess)
-    assert "X-API-Key" not in sess.headers
 
 
 def test_query_params_inject_api_key():

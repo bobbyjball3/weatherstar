@@ -54,12 +54,12 @@ class MonthlyOutlookScreen(Screen):
             surface.blit(title, title.get_rect(center=(320, y_pos)))
         y_pos += 35
 
-        self.blit_text(
+        self.draw_text(
             surface, ctx, "TEMPERATURE OUTLOOK", (60, y_pos), font_name="extended", color=yellow
         )
         y_pos += 35
 
-        self.blit_text(
+        self.draw_text(
             surface,
             ctx,
             "Above Normal Temperatures Expected",
@@ -69,7 +69,7 @@ class MonthlyOutlookScreen(Screen):
         )
         y_pos += 30
 
-        self.blit_text(
+        self.draw_text(
             surface,
             ctx,
             "Probability: 60% above normal",
@@ -79,12 +79,12 @@ class MonthlyOutlookScreen(Screen):
         )
         y_pos += 40
 
-        self.blit_text(
+        self.draw_text(
             surface, ctx, "PRECIPITATION OUTLOOK", (60, y_pos), font_name="extended", color=yellow
         )
         y_pos += 35
 
-        self.blit_text(
+        self.draw_text(
             surface,
             ctx,
             "Near Normal Precipitation Expected",
@@ -94,7 +94,7 @@ class MonthlyOutlookScreen(Screen):
         )
         y_pos += 30
 
-        self.blit_text(
+        self.draw_text(
             surface, ctx, "Probability: Equal chances", (100, y_pos), font_name="small", color=white
         )
         y_pos += 40

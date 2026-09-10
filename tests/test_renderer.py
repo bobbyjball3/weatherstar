@@ -47,12 +47,12 @@ def test_color_fallback(screen):
     assert _Dummy().color(ctx, "nope") == (255, 255, 255)
 
 
-def test_text_surface_and_blit_text(screen):
+def test_text_surface_and_draw_text(screen):
     renderer = _Dummy()
     ctx = _ctx(screen, fonts={"normal": pygame.font.Font(None, 20)})
     surf = renderer.text_surface(ctx, "hello", color_key="yellow")
     assert surf.get_width() > 0
-    rect = renderer.blit_text(screen, ctx, "hello", (10, 10), color_key="yellow")
+    rect = renderer.draw_text(screen, ctx, "hello", (10, 10), color_key="yellow")
     assert rect.topleft == (10, 10)
 
 
@@ -96,14 +96,6 @@ def test_centered_draws_and_returns_rect(screen):
     rect = _Dummy().centered(screen, ctx, "hi", 100, font_name="small")
     assert rect.centery == 100
     assert rect.centerx == screen.get_width() // 2
-
-
-def test_fahrenheit_conversions(screen):
-    renderer = _Dummy()
-    assert renderer.fahrenheit(0) == 32
-    assert renderer.fahrenheit(100) == 212
-    assert renderer.fahrenheit(None) is None
-    assert renderer.fahrenheit("bad") is None
 
 
 def test_cardinal_points(screen):

@@ -133,25 +133,15 @@ def _ctx(surface):
     return AppContext(surface=surface, fonts={"title": pygame.font.Font(None, 32)})
 
 
-def test_context_font_and_asset_lookup_errors(pygame_env):
+def test_context_colors_and_size(pygame_env):
     ctx = _ctx(None)
-    assert ctx.get_color("yellow")[:3] == (255, 255, 0)
-    with pytest.raises(KeyError):
-        ctx.font("missing")
-    with pytest.raises(KeyError):
-        ctx.asset("missing")
+    assert ctx.colors["yellow"][:3] == (255, 255, 0)
     assert ctx.size() == (0, 0)
-    assert ctx.width() == 0 and ctx.height() == 0
 
 
-def test_context_size_clone_and_registry_errors(pygame_env, screen):
+def test_context_size_with_surface_and_registry_errors(pygame_env, screen):
     ctx = _ctx(screen)
     assert ctx.size() == (640, 480)
-    assert ctx.width() == 640 and ctx.height() == 480
-    cloned = ctx.clone()
-    assert cloned.surface is ctx.surface and cloned is not ctx
-    other = ctx.clone(surface=pygame.Surface((100, 50)))
-    assert other.width() == 100
 
     registry = DataRegistry()
     registry.register("a", object())

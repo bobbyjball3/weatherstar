@@ -14,7 +14,6 @@ never become fields.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, SecretStr
@@ -52,38 +51,9 @@ class Plugin(BaseModel):
         return f"{kind}.{name}"
 
     @classmethod
-    def config_fields(cls) -> dict[str, Any]:
-        """Return ``name -> pydantic FieldInfo`` for every config field."""
-        return dict(cls.model_fields)
-
-    @classmethod
     def is_sensitive_field(cls, field_name: str) -> bool:
         field = cls.model_fields.get(field_name)
         return field is not None and _is_secret_annotation(field.annotation)
-
-    @classmethod
-    def default_config(cls) -> dict[str, Any]:
-        """Return every configurable key with its declared default.
-
-        Keys without a default (required) get an empty example placeholder so
-        skeleton generation can show what must be supplied.
-        """
-        result: dict[str, Any] = {}
-        for key, field in cls.model_fields.items():
-            if field.is_required():
-                result[key] = "<required>"
-            else:
-                default = field.default
-                if isinstance(default, SecretStr):
-                    # Never embed secret defaults into generated config.
-                    result[key] = "<required>"
-                else:
-                    result[key] = default
-        return result
-
-    @classmethod
-    def required_keys(cls) -> tuple[str, ...]:
-        return tuple(name for name, field in cls.model_fields.items() if field.is_required())
 
     @classmethod
     def from_config(cls, values: dict[str, Any]) -> Plugin:
@@ -140,13 +110,6 @@ class Plugin(BaseModel):
 
     def __str__(self) -> str:
         return self.__repr__()
-
-    def validate_plugins(self, _visited: Iterable[type[Plugin]] = ()) -> None:
-        """Hook for plugins that compose others (Screens etc.) to validate deps.
-
-        Should raise :class:`InvalidConfiguration` when a referenced plugin is
-        missing required configuration.
-        """
 
 
 def _is_secret_annotation(annotation: Any) -> bool:

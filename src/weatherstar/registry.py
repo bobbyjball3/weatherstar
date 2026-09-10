@@ -98,8 +98,3 @@ def discover() -> None:
     """Load built-ins then any externally installed plugins (idempotent-ish)."""
     load_builtins()
     load_entry_points()
-
-
-def all_plugins() -> dict[str, list[str]]:
-    """Return registered kind -> [names] for the currently imported plugins."""
-    return {kind: registry.names(kind) for kind in registry.kinds()}
