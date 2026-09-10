@@ -26,6 +26,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from weatherstar.datasources.base import Datasource, coerce_float
+from weatherstar.plugin import memoize
 from weatherstar.registry import plugin
 
 BASE_URL = "https://api.weather.gov"
@@ -391,10 +392,13 @@ class NoaaWeather(Datasource):
 
     # -- grid point ----------------------------------------------------------
 
+    @memoize(ttl=3600)
     def get_point(self, lat: float, lon: float) -> dict | None:
-        data = self.fetch("GET", f"{BASE_URL}/points/{lat:.4f},{lon:.4f}")
+        request = self.build_request("GET", f"{BASE_URL}/points/{lat:.4f},{lon:.4f}")
+        data = self.response_json(self.send(request))
         return data["properties"] if data else None
 
+    @memoize(ttl=3600)
     def _station_features(self, lat: float, lon: float) -> list[dict[str, str]]:
         """Nearby observation stations as ``[{"id", "name"}]``, nearest first.
 
@@ -408,7 +412,7 @@ class NoaaWeather(Datasource):
         stations_url = point.get("observationStations")
         if not stations_url:
             return []
-        data = self.fetch("GET", stations_url)
+        data = self.response_json(self.send(self.build_request("GET", stations_url)))
         if not data:
             return []
         features = [
@@ -432,12 +436,14 @@ class NoaaWeather(Datasource):
 
     # -- typed fetches ---------------------------------------------------------
 
+    @memoize(ttl=300)
     def _latest_observation(
         self, station_id: str, station_name: str = ""
     ) -> CurrentConditions | None:
         """Latest observation model for one station (cached by station)."""
         url = f"{BASE_URL}/stations/{station_id}/observations/latest"
-        props = (self.fetch("GET", url) or {}).get("properties")
+        data = self.response_json(self.send(self.build_request("GET", url)))
+        props = (data or {}).get("properties")
         if not props:
             return None
         return CurrentConditions.from_props(props, station_name=station_name)
@@ -493,6 +499,7 @@ class NoaaWeather(Datasource):
             return None
         return office, int(grid_x), int(grid_y)
 
+    @memoize(ttl=1800)
     def _periods(
         self,
         lat: float,
@@ -507,7 +514,8 @@ class NoaaWeather(Datasource):
             return []
         office, grid_x, grid_y = grid
         url = f"{BASE_URL}/gridpoints/{office}/{grid_x},{grid_y}/{path}"
-        data = self.fetch("GET", url, params={"units": units}) or {}
+        request = self.build_request("GET", url, params={"units": units})
+        data = self.response_json(self.send(request)) or {}
         return [
             ForecastPeriod.from_props(raw)
             for raw in data.get("properties", {}).get("periods") or []
@@ -521,9 +529,11 @@ class NoaaWeather(Datasource):
 
     # -- regional tables ---------------------------------------------------------
 
+    @memoize(ttl=3600)
     def _station_meta(self, station_id: str) -> dict:
         """Full station JSON (top-level ``geometry`` + ``properties``)."""
-        return self.fetch("GET", f"{BASE_URL}/stations/{station_id}") or {}
+        request = self.build_request("GET", f"{BASE_URL}/stations/{station_id}")
+        return self.response_json(self.send(request)) or {}
 
     def _station_forecast_url(self, station_id: str) -> str | None:
         """Gridpoint forecast URL for one station, or ``None``.
@@ -547,9 +557,11 @@ class NoaaWeather(Datasource):
         forecast = (meta.get("properties") or {}).get("forecast") or ""
         return forecast if "/gridpoints/" in forecast else None
 
+    @memoize(ttl=1800)
     def _gridpoint_periods(self, forecast_url: str) -> list[ForecastPeriod]:
         """Parse ``periods`` from an explicit gridpoint forecast URL."""
-        data = self.fetch("GET", forecast_url, params={"units": "us"}) or {}
+        request = self.build_request("GET", forecast_url, params={"units": "us"})
+        data = self.response_json(self.send(request)) or {}
         return [
             ForecastPeriod.from_props(raw)
             for raw in data.get("properties", {}).get("periods") or []

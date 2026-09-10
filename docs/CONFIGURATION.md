@@ -115,7 +115,7 @@ slides = [
 [datasource.alerts]
 # HTTP request timeout in seconds.
 timeout = 10
-# Seconds each HTTP response is cached (success or failure).
+# Default seconds a memoized fetch is cached (success or failure).
 cache_ttl = 300
 # Static HTTP headers merged into every request.
 headers = {User-Agent = "weatherstar (python)"}
@@ -127,7 +127,7 @@ severity_priority = "extreme:severe:moderate"
 [datasource.earthquakes]
 # HTTP request timeout in seconds.
 timeout = 10
-# Seconds each HTTP response is cached (success or failure).
+# Default seconds a memoized fetch is cached (success or failure).
 cache_ttl = 300
 # Static HTTP headers merged into every request.
 headers = {User-Agent = "weatherstar (python)"}
@@ -141,7 +141,7 @@ limit = 10
 [datasource.history]
 # HTTP request timeout in seconds.
 timeout = 10
-# Seconds each HTTP response is cached (success or failure).
+# Default seconds a memoized fetch is cached (success or failure).
 cache_ttl = 300
 # Static HTTP headers merged into every request.
 headers = {User-Agent = "weatherstar (python)"}
@@ -151,7 +151,7 @@ query = {}
 [datasource.local_news]
 # HTTP request timeout in seconds.
 timeout = 10
-# Seconds each HTTP response is cached (success or failure).
+# Default seconds a memoized fetch is cached (success or failure).
 cache_ttl = 300
 # Static HTTP headers merged into every request.
 headers = {User-Agent = "weatherstar (python)"}
@@ -173,7 +173,7 @@ news_day_count = 10
 [datasource.radar]
 # HTTP request timeout in seconds.
 timeout = 10
-# Seconds each HTTP response is cached (success or failure).
+# Default seconds a memoized fetch is cached (success or failure).
 cache_ttl = 300
 # Static HTTP headers merged into every request.
 headers = {User-Agent = "weatherstar (python)"}
@@ -183,7 +183,7 @@ query = {}
 [datasource.stocks]
 # HTTP request timeout in seconds.
 timeout = 10
-# Seconds each HTTP response is cached (success or failure).
+# Default seconds a memoized fetch is cached (success or failure).
 cache_ttl = 300
 # Static HTTP headers merged into every request.
 headers = {User-Agent = "weatherstar (python)"}
@@ -195,7 +195,7 @@ symbols = "DIA,SPY,QQQ"
 [datasource.uv_index]
 # HTTP request timeout in seconds.
 timeout = 10
-# Seconds each HTTP response is cached (success or failure).
+# Default seconds a memoized fetch is cached (success or failure).
 cache_ttl = 300
 # Static HTTP headers merged into every request.
 headers = {User-Agent = "weatherstar (python)"}
@@ -207,7 +207,7 @@ days = 7
 [datasource.weather]
 # HTTP request timeout in seconds.
 timeout = 10
-# Seconds each HTTP response is cached (success or failure).
+# Default seconds a memoized fetch is cached (success or failure).
 cache_ttl = 300
 # Static HTTP headers merged into every request.
 headers = {User-Agent = "weatherstar (python)"}

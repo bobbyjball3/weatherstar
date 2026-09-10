@@ -13,6 +13,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from weatherstar.datasources.base import Datasource, coerce_float
+from weatherstar.plugin import memoize
 from weatherstar.registry import plugin
 
 NOAA_ALERTS_URL = "https://api.weather.gov/alerts/active"
@@ -112,8 +113,12 @@ class NoaaAlertsDatasource(Datasource):
         description="Colon-separated severity order used to sort alerts (most severe first).",
     )
 
+    @memoize(ttl=60)
     def active(self, lat: float, lon: float) -> list[Alert]:
-        data = self.fetch("GET", NOAA_ALERTS_URL, params={"point": f"{lat},{lon}"}, timeout=5)
+        request = self.build_request(
+            "GET", NOAA_ALERTS_URL, params={"point": f"{lat},{lon}"}, timeout=5
+        )
+        data = self.response_json(self.send(request))
         alerts = _parse_alerts(data or {})
         priority = [p.strip() for p in self.severity_priority.split(":") if p.strip()]
         alerts.sort(key=lambda a: priority.index(a.severity) if a.severity in priority else 99)
@@ -134,6 +139,7 @@ class EarthquakesDatasource(Datasource):
     )
     limit: int = Field(default=10, description="Maximum number of earthquakes to fetch.")
 
+    @memoize(ttl=1800)
     def recent(self, lat: float, lon: float) -> list[Earthquake]:
         params = {
             "format": "geojson",
@@ -141,7 +147,7 @@ class EarthquakesDatasource(Datasource):
             "limit": self.limit,
             "orderby": "time",
         }
-        data = self.fetch("GET", USGS_URL, params=params, timeout=10)
+        data = self.response_json(self.send(self.build_request("GET", USGS_URL, params=params)))
         result: list[Earthquake] = []
         for event in (data or {}).get("features") or []:
             props = event["properties"]
@@ -164,6 +170,7 @@ class UvIndexDatasource(Datasource):
 
     days: int = Field(default=7, description="Number of days of UV index forecast to fetch.")
 
+    @memoize(ttl=1800)
     def daily(self, lat: float, lon: float) -> list[UvReading]:
         params = {
             "latitude": lat,
@@ -172,7 +179,7 @@ class UvIndexDatasource(Datasource):
             "timezone": "auto",
             "forecast_days": self.days,
         }
-        data = self.fetch("GET", OM_UV_URL, params=params, timeout=10)
+        data = self.response_json(self.send(self.build_request("GET", OM_UV_URL, params=params)))
         daily = (data or {}).get("daily") or {}
         dates = daily.get("time") or []
         values = daily.get("uv_index_max") or []
@@ -223,13 +230,14 @@ class StockMarketDatasource(Datasource):
                 result.append(quote)
         return result
 
+    @memoize(ttl=300)
     def _quote(self, symbol: str) -> Quote | None:
-        data = self.fetch(
+        request = self.build_request(
             "GET",
             "https://www.alphavantage.co/query",
             params={"function": "GLOBAL_QUOTE", "symbol": symbol},
-            timeout=10,
         )
+        data = self.response_json(self.send(request))
         quote = (data or {}).get("Global Quote") or {}
         if not quote:
             return None

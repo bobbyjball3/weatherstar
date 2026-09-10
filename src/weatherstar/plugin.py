@@ -17,7 +17,7 @@ from __future__ import annotations
 import functools
 from typing import Any, ClassVar
 
-from cachetools import TTLCache
+from cachetools import TTLCache, cachedmethod
 from cachetools.keys import hashkey
 from pydantic import BaseModel, ConfigDict, PrivateAttr, SecretStr
 
@@ -32,22 +32,32 @@ def memoize(fn: Any = None, *, ttl: int | None = None) -> Any:
 
     Caching is a feature vended by the base class: a concrete plugin just
     decorates a method and never touches cache state.  The cache lives on the
-    instance and is keyed by the method and its arguments.  ``ttl`` (seconds) is
-    optional; without it the result is kept for the instance's lifetime.
-    ``None`` results are cached too.
+    instance and is keyed by the method and its arguments, so it stays stable
+    no matter how the underlying request changes.  ``ttl`` (seconds) is
+    optional; a datasource falls back to its ``cache_ttl`` config, while other
+    plugins keep the result for the instance's lifetime.  ``None`` results are
+    cached too.
     """
 
     def decorator(func: Any) -> Any:
+        name = func.__qualname__
+
+        def cache(self: Plugin) -> Any:
+            effective = ttl if ttl is not None else getattr(self, "cache_ttl", None)
+            return self._memo_for(effective)
+
+        def key(self: Plugin, *args: Any, **kwargs: Any) -> Any:
+            # ``cachedmethod``'s default ``methodkey`` keys on arguments only;
+            # folding in the method name keeps methods sharing a cache apart.
+            return hashkey(name, *args, **kwargs)
+
+        cached = cachedmethod(cache, key=key)(func)
+
         @functools.wraps(func)
         def wrapper(self: Plugin, *args: Any, **kwargs: Any) -> Any:
-            cache = self._memo_for(ttl)
-            key = hashkey(func.__qualname__, *args, **kwargs)
-            try:
-                return cache[key]
-            except KeyError:
-                value = func(self, *args, **kwargs)
-                cache[key] = value
-                return value
+            # ``cachedmethod`` returns a descriptor object, which Pydantic
+            # rejects in a model body; bind it through a plain function.
+            return cached.__get__(self, type(self))(*args, **kwargs)
 
         return wrapper
 

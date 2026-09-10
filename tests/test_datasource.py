@@ -1,20 +1,37 @@
-"""Tests for the Datasource base: headers/query, HTTP, and the fetch cache."""
+"""Tests for the Datasource base: headers/query, transport, response readers."""
 
 import httpx
-from pydantic import SecretStr
+from pydantic import PrivateAttr, SecretStr
 
 from weatherstar.datasources.base import Datasource
+from weatherstar.plugin import memoize
 
 
 class PlainDS(Datasource):
     pass
 
 
-class BytesDS(Datasource):
-    """Overrides the response interface to read raw bytes (radar-style)."""
+class CountingDS(Datasource):
+    _calls: int = PrivateAttr(default=0)
 
-    def parse_response(self, response):
-        return self.response_bytes(response)
+    @memoize(ttl=60)
+    def value(self, x):
+        self._calls += 1
+        return x * 2
+
+    @memoize(ttl=60)
+    def maybe(self, x):
+        self._calls += 1
+        return None
+
+
+class DefaultTTLDS(Datasource):
+    _calls: int = PrivateAttr(default=0)
+
+    @memoize
+    def value(self, x):
+        self._calls += 1
+        return x
 
 
 def _client(handler) -> httpx.Client:
@@ -42,77 +59,60 @@ def test_build_request_merges_headers_and_query():
     assert "a=1" in url
 
 
-def test_fetch_returns_none_for_bad_url():
+def test_send_returns_response_on_success():
     ds = PlainDS()
-    assert ds.fetch("GET", "not-a-url") is None
+    ds._client = _client(lambda request: httpx.Response(200, json={"ok": 1}))
+    response = ds.send(ds.build_request("GET", "https://example.test/x"))
+    assert response is not None
+    assert response.status_code == 200
 
 
-def test_fetch_caches_by_request():
-    calls = []
-
-    def handler(request):
-        calls.append(str(request.url))
-        return httpx.Response(200, json={"ok": True})
-
+def test_send_returns_none_for_bad_url():
     ds = PlainDS()
-    ds._client = _client(handler)
-    first = ds.fetch("GET", "https://example.test/x", params={"a": "1"})
-    second = ds.fetch("GET", "https://example.test/x", params={"a": "1"})
-    assert first == {"ok": True}
-    assert second == {"ok": True}
-    assert len(calls) == 1
-    # Distinct params -> distinct cache entry.
-    ds.fetch("GET", "https://example.test/x", params={"a": "2"})
-    assert len(calls) == 2
+    assert ds.send(ds.build_request("GET", "not-a-url")) is None
 
 
-def test_fetch_negative_caches_failures():
-    calls = []
-
-    def handler(request):
-        calls.append(1)
-        return httpx.Response(500, json={"error": "boom"})
-
+def test_send_returns_none_on_http_error():
     ds = PlainDS()
-    ds._client = _client(handler)
-    assert ds.fetch("GET", "https://example.test/x") is None
-    assert ds.fetch("GET", "https://example.test/x") is None
-    assert len(calls) == 1  # failure cached for cache_ttl
+    ds._client = _client(lambda request: httpx.Response(500))
+    assert ds.send(ds.build_request("GET", "https://example.test/x")) is None
 
 
-def test_fetch_returns_none_on_bad_json():
+def test_response_json_reads_and_guards():
     ds = PlainDS()
-    ds._client = _client(lambda request: httpx.Response(200, text="not json"))
-    assert ds.fetch("GET", "https://example.test/x") is None
+    assert ds.response_json(httpx.Response(200, json={"a": 1})) == {"a": 1}
+    assert ds.response_json(httpx.Response(200, text="not json")) is None
+    assert ds.response_json(None) is None
 
 
-def test_parse_response_can_return_bytes():
-    ds = BytesDS()
-    ds._client = _client(lambda request: httpx.Response(200, content=b"GIF89a"))
-    assert ds.fetch("GET", "https://example.test/x") == b"GIF89a"
-
-
-def test_fetch_posts_json_body():
-    seen = {}
-
-    def handler(request):
-        seen["method"] = request.method
-        seen["body"] = request.content
-        return httpx.Response(200, json={"results": []})
-
+def test_response_bytes_reads_and_guards():
     ds = PlainDS()
-    ds._client = _client(handler)
-    ds.fetch("POST", "https://example.test/x", json={"query": "hi"})
-    assert seen["method"] == "POST"
-    assert b"hi" in seen["body"]
+    assert ds.response_bytes(httpx.Response(200, content=b"GIF89a")) == b"GIF89a"
+    assert ds.response_bytes(None) is None
 
 
-def test_cache_ttl_config_controls_cache():
-    ds = PlainDS.model_validate({"cache_ttl": 42})
-    cache = ds._cache_for()
-    assert cache.ttl == 42
-    assert cache is ds._cache_for()
-    assert PlainDS()._cache_for() is not cache
+def test_memoize_caches_by_method_and_args():
+    ds = CountingDS()
+    assert ds.value(2) == 4
+    assert ds.value(2) == 4  # cache hit -> no second call
+    assert ds._calls == 1
+    assert ds.value(3) == 6  # distinct args -> miss
+    assert ds._calls == 2
+
+
+def test_memoize_caches_none_results():
+    ds = CountingDS()
+    assert ds.maybe(1) is None
+    assert ds.maybe(1) is None
+    assert ds._calls == 1
+
+
+def test_memoize_defaults_ttl_to_cache_ttl():
+    ds = DefaultTTLDS.model_validate({"cache_ttl": 42})
+    assert ds.value(1) == 1
+    assert ds.value(1) == 1
+    assert ds._calls == 1
+    assert ds._memo_for(42).ttl == 42
 
 
 def test_close_clears_client():

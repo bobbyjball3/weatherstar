@@ -46,7 +46,7 @@ The CI runs `task check` and `task coverage` — a change is not done until
   `SDL_AUDIODRIVER=dummy` before pygame imports. Use the `pygame_env`, `screen`
   (640×480 surface), `display`, and `fonts` fixtures.
 - **No network in tests.** Unit-test datasources by installing an
-  `httpx.MockTransport` (or `monkeypatch.setattr(ds, "fetch", fake)`); never
+  `httpx.MockTransport` (or `monkeypatch.setattr(ds, "send", fake)`); never
   hit real APIs. Screens that would fetch (e.g. radar) are tested by swapping
   the whole data registry for stubs.
 - Two screen-testing styles:

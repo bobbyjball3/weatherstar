@@ -14,6 +14,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from weatherstar.datasources.base import Datasource, coerce_float
+from weatherstar.plugin import memoize
 from weatherstar.registry import plugin
 
 _HISTORY_URL = "https://api.open-meteo.com/v1/forecast"
@@ -49,8 +50,9 @@ class HistoryDatasource(Datasource):
 
     # -- fetching ------------------------------------------------------------
 
+    @memoize(ttl=3600)
     def _daily(self, lat: float, lon: float) -> dict[str, Any]:
-        data = self.fetch(
+        request = self.build_request(
             "GET",
             _HISTORY_URL,
             params={
@@ -62,8 +64,8 @@ class HistoryDatasource(Datasource):
                 "past_days": 30,
                 "timezone": "auto",
             },
-            timeout=10,
         )
+        data = self.response_json(self.send(request))
         return (data or {}).get("daily") or {}
 
     def refresh(self, lat: float, lon: float) -> bool:

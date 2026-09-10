@@ -14,6 +14,7 @@ import io
 import pygame
 
 from weatherstar.datasources.base import Datasource
+from weatherstar.plugin import memoize
 from weatherstar.registry import plugin
 
 # Candidate image templates, newest first ordering handled per-frame below.
@@ -63,12 +64,9 @@ class NoaaRadar(Datasource):
 
     # -- fetching -------------------------------------------------------------
 
-    def parse_response(self, response) -> bytes | None:
-        """Radar stills are images, so read the body as raw bytes."""
-        return self.response_bytes(response)
-
     def _fetch_bytes(self, url: str) -> bytes | None:
-        data = self.fetch("GET", url)
+        request = self.build_request("GET", url)
+        data = self.response_bytes(self.send(request))
         return data if data and len(data) > 1000 else None
 
     @staticmethod
@@ -93,6 +91,7 @@ class NoaaRadar(Datasource):
                         self._log.debug("radar_decode_failed", url=url, error=str(exc))
         return frames
 
+    @memoize(ttl=90)
     def frames(self, lat: float, lon: float) -> list[pygame.Surface]:
         """Return the radar frames, cropped to the regional view (empty offline)."""
         return self._fetch_frames(lat, lon)

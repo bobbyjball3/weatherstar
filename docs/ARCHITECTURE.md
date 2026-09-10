@@ -49,8 +49,8 @@ Both `Screen` and `Component` inherit `Renderer` (in `renderer.py`), a mixin of
 implementation instead of re-declaring `_font`/`_color` helpers per file.
 
 Caching is a feature vended by the base: `Plugin` provides the `@memoize`
-decorator (per-instance, keyed by method and arguments, optional `ttl`), and
-`Datasource.fetch` caches HTTP responses for `cache_ttl` seconds. Concrete
+decorator (per-instance, keyed by method and arguments, optional `ttl`), which
+datasources apply to their fetch methods (defaulting to `cache_ttl`). Concrete
 plugins never hold cache state or touch a cache library.
 
 ### Screens
@@ -90,21 +90,31 @@ through the context.
 ### Datasources
 
 `Datasource` (in `datasources/base.py`) is a `Plugin` that owns every
-cross-cutting HTTP concern so a datasource only declares config and implements
-two interface methods:
+cross-cutting HTTP concern and splits a fetch into readable steps:
 
-- `build_request(method, url, params=..., json=...)` — builds an
-  `httpx.Request`, merging the configured `headers` / `query` (interface
-  method 1);
-- `parse_response(response)` — decodes the `httpx.Response` (interface method
-  2; the default reads JSON, radar overrides it to read bytes).
+- `build_request(method, url, params=..., json=...)` builds an
+  `httpx.Request`, merging the configured `headers` / `query`;
+- `send(request)` performs the request (timeout, status logging, graceful
+  `None` on transport/HTTP failure) — a datasource never touches the client;
+- `response_json(response)` / `response_bytes(response)` read the body.
 
-The `fetch(...)` driver wires them together: build → send → parse, with
-timeout, status logging, and graceful `None` on transport/HTTP/decode failure.
-A lazily created `httpx.Client` carries the configured headers/query and
-timeout. `fetch` also caches each result — success *or* failure — in a
-per-instance TTL cache for `cache_ttl` seconds, so datasources never touch
-cache state.
+A method composes these and is cached with the base-vended `@memoize`
+decorator:
+
+```python
+@memoize(ttl=1800)
+def get_forecast(self, lat, lon):
+    response = self.send(self.build_request("GET", url, params={"units": "us"}))
+    data = self.response_json(response) or {}
+    return [ForecastPeriod.from_props(r) for r in data["properties"]["periods"]]
+```
+
+The cache key is `(method, arguments)` — a stable *logical* key, independent of
+how the request is shaped, so a timestamp or parameter change can never defeat
+caching. `None` results are cached too (negative cache), so an unreachable API
+is retried once per TTL. `@memoize` is implemented over
+`cachetools.cachedmethod`; `ttl` is optional and defaults to the datasource's
+`cache_ttl` config.
 
 Auth and headers are declared as config: `headers` / `query` are
 `dict[str, SecretStr]`, unwrapped only at the HTTP boundary
@@ -207,7 +217,7 @@ logs.
 `tests/conftest.py` forces SDL dummy drivers before pygame imports, so the whole
 suite (and `--validate`) runs on CI machines without a display. External APIs
 are never hit in tests: datasource tests install an `httpx.MockTransport` (or
-monkeypatch `fetch`), and the integration test swaps the real `DataRegistry`
+monkeypatch `send`), and the integration test swaps the real `DataRegistry`
 for benign stubs.
 
 ## Key design decisions

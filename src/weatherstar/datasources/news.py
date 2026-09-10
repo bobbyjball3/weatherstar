@@ -16,6 +16,7 @@ from typing import ClassVar
 from pydantic import BaseModel, ConfigDict, Field
 
 from weatherstar.datasources.base import Datasource
+from weatherstar.plugin import memoize
 from weatherstar.registry import plugin
 
 
@@ -69,11 +70,7 @@ class LocalNewsDatasource(Datasource):
         if not self.news_query:
             return []
 
-        # Anchor the window to midnight UTC so the request body (and therefore
-        # the fetch cache key) is stable across renders; a per-second timestamp
-        # would otherwise defeat caching and re-POST every frame.
-        midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        published_from = midnight - timedelta(days=self.news_day_count)
+        published_from = datetime.now(timezone.utc) - timedelta(days=self.news_day_count)
         body = {
             "query": self.news_query,
             "k": self.story_count,
@@ -84,7 +81,8 @@ class LocalNewsDatasource(Datasource):
                 "category": self.news_categories,
             },
         }
-        payload = self.fetch("POST", self._api_endpoint, json=body)
+        request = self.build_request("POST", self._api_endpoint, json=body)
+        payload = self.response_json(self.send(request))
         results = payload.get("results") if isinstance(payload, dict) else None
         headlines: list[Headline] = []
         for result in results or []:
@@ -101,6 +99,7 @@ class LocalNewsDatasource(Datasource):
         """Return a city label; empty lets the screen fall back to weather data."""
         return ""
 
+    @memoize(ttl=3600)
     def headlines(self, lat: float, lon: float) -> list[Headline]:
         """Return the local headlines (most recent first)."""
         return self._get_headlines()

@@ -1,5 +1,7 @@
 """Tests for datasource plugins (parsing, caching, masking, graceful failure)."""
 
+import json
+
 import httpx
 
 from weatherstar.datasources.feeds import (
@@ -19,13 +21,22 @@ def _stocks(**values):
     return StockMarketDatasource.model_validate(defaults)
 
 
+def _install(ds, handler):
+    ds._client = httpx.Client(transport=httpx.MockTransport(handler))
+    return ds
+
+
+def _json(payload, status=200):
+    return lambda request: httpx.Response(status, json=payload)
+
+
 def test_stock_query_config_is_masked_in_repr():
     ds = _stocks(query={"apikey": "secret"})
     assert "secret" not in repr(ds)
     assert "*" in repr(ds)
 
 
-def test_stock_quote_parses(monkeypatch):
+def test_stock_quote_parses():
     ds = _stocks(symbols="DIA")
     payload = {
         "Global Quote": {
@@ -35,7 +46,7 @@ def test_stock_quote_parses(monkeypatch):
             "10. change percent": "0.5%",
         }
     }
-    monkeypatch.setattr(ds, "fetch", lambda *a, **k: payload)
+    _install(ds, _json(payload))
     quotes = ds.quotes()
     assert quotes[0].symbol == "DIA"
     assert quotes[0].price == 300.0
@@ -51,13 +62,12 @@ def test_stock_api_key_sent_as_query_param():
         "https://www.alphavantage.co/query",
         params={"function": "GLOBAL_QUOTE", "symbol": "DIA"},
     )
-    assert request is not None
     assert "apikey=k" in str(request.url)
 
 
-def test_stock_quote_graceful_when_api_fails(monkeypatch):
+def test_stock_quote_graceful_when_api_fails():
     ds = _stocks(symbols="DIA")
-    monkeypatch.setattr(ds, "fetch", lambda *a, **k: None)
+    _install(ds, lambda request: httpx.Response(500))
     assert ds.quotes() == []
 
 
@@ -92,7 +102,7 @@ def test_alerts_critical():
     assert ds.is_critical([Alert(severity="Severe", urgency="Expected")]) is False
 
 
-def test_uv_daily_parsing_and_protection(monkeypatch):
+def test_uv_daily_parsing_and_protection():
     ds = UvIndexDatasource()
     payload = {
         "daily": {
@@ -100,7 +110,7 @@ def test_uv_daily_parsing_and_protection(monkeypatch):
             "uv_index_max": [3.5, 9.0],
         }
     }
-    monkeypatch.setattr(ds, "fetch", lambda *a, **k: payload)
+    _install(ds, _json(payload))
     daily = ds.daily(10.0, 20.0)
     assert len(daily) == 2
     assert daily[0].date == "2026-01-01"
@@ -110,7 +120,7 @@ def test_uv_daily_parsing_and_protection(monkeypatch):
     assert ds.protection_level(11) == "Extreme"
 
 
-def test_earthquakes_recent_parse(monkeypatch):
+def test_earthquakes_recent_parse():
     ds = EarthquakesDatasource()
     payload = {
         "features": [
@@ -124,7 +134,7 @@ def test_earthquakes_recent_parse(monkeypatch):
             {"properties": {"mag": None, "place": "", "time": None}},
         ]
     }
-    monkeypatch.setattr(ds, "fetch", lambda *a, **k: payload)
+    _install(ds, _json(payload))
     events = ds.recent(0.0, 0.0)
     assert len(events) == 2
     assert events[0].magnitude == 4.2
@@ -147,18 +157,18 @@ def test_local_news_empty_when_unconfigured():
     assert ds.headlines(28.5, -81.4) == []
 
 
-def test_local_news_empty_when_query_missing(monkeypatch):
-    def _no_fetch(*a, **k):
+def test_local_news_empty_when_query_missing():
+    def boom(request):
         raise AssertionError("should not fetch when unconfigured")
 
     ds = _news(news_query="")
-    monkeypatch.setattr(ds, "fetch", _no_fetch)
+    _install(ds, boom)
     assert ds.headlines(28.5, -81.4) == []
 
 
-def test_local_news_headlines_parse_results(monkeypatch):
+def test_local_news_headlines_parse_results():
     ds = _news()
-    calls = []
+    requests = []
     payload = {
         "results": [
             {"article": {"title": "Council votes on budget", "url": "https://e.com/1"}},
@@ -166,20 +176,20 @@ def test_local_news_headlines_parse_results(monkeypatch):
         ]
     }
 
-    def fake(method, url, *, params=None, json=None, timeout=None):
-        calls.append({"method": method, "url": url, "json": json})
-        return payload
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json=payload)
 
-    monkeypatch.setattr(ds, "fetch", fake)
+    _install(ds, handler)
     headlines = ds.headlines(28.5, -81.4)
     assert [(h.title, h.url) for h in headlines] == [
         ("Council votes on budget", "https://e.com/1"),
         ("Storm watch tonight", "https://e.com/2"),
     ]
-    call = calls[0]
-    assert call["method"] == "POST"
-    assert call["url"] == "https://api.webz.io/api/news/context"
-    body = call["json"]
+    request = requests[0]
+    assert request.method == "POST"
+    assert str(request.url) == "https://api.webz.io/api/news/context"
+    body = json.loads(request.content)
     assert body["query"] == "News in Carmel, Indiana"
     assert body["k"] == 10
     assert body["filters"]["language"] == ["english"]
@@ -188,13 +198,13 @@ def test_local_news_headlines_parse_results(monkeypatch):
     assert body["filters"]["published_from"].endswith("Z")
 
 
-def test_local_news_empty_when_no_results(monkeypatch):
+def test_local_news_empty_when_no_results():
     ds = _news()
-    monkeypatch.setattr(ds, "fetch", lambda *a, **k: {"results": None})
+    _install(ds, _json({"results": None}))
     assert ds.headlines(28.5, -81.4) == []
 
 
-def test_local_news_skips_results_without_usable_article(monkeypatch):
+def test_local_news_skips_results_without_usable_article():
     ds = _news()
     payload = {
         "results": [
@@ -204,23 +214,22 @@ def test_local_news_skips_results_without_usable_article(monkeypatch):
             {"article": {"title": "Keep this one", "url": "https://e.com/keep"}},
         ]
     }
-    monkeypatch.setattr(ds, "fetch", lambda *a, **k: payload)
+    _install(ds, _json(payload))
     headlines = ds.headlines(28.5, -81.4)
     assert [(h.title, h.url) for h in headlines] == [("Keep this one", "https://e.com/keep")]
 
 
-def test_local_news_graceful_when_api_fails(monkeypatch):
+def test_local_news_graceful_when_api_fails():
     ds = _news()
-    monkeypatch.setattr(ds, "fetch", lambda *a, **k: None)
+    _install(ds, lambda request: httpx.Response(500))
     assert ds.headlines(28.5, -81.4) == []
 
 
 def test_local_news_headlines_request_is_cache_stable():
-    """Repeated renders must reuse the cached POST, not re-fetch every frame.
+    """Repeated renders must reuse the memoized result, not re-POST every frame.
 
-    Regression: ``published_from`` used to embed the current time, so the
-    request body (and cache key) changed every second and the screen re-POSTed
-    while scrolling.
+    Regression: the request body embeds a timestamp, which used to change the
+    request-level cache key every second.  The method-keyed cache is immune.
     """
     ds = _news()
     calls = []
@@ -229,7 +238,7 @@ def test_local_news_headlines_request_is_cache_stable():
         calls.append(1)
         return httpx.Response(200, json={"results": [{"article": {"title": "T1", "url": "u1"}}]})
 
-    ds._client = httpx.Client(transport=httpx.MockTransport(handler))
+    _install(ds, handler)
     assert [h.title for h in ds.headlines(28.5, -81.4)] == ["T1"]
     assert [h.title for h in ds.headlines(28.5, -81.4)] == ["T1"]
     assert len(calls) == 1
@@ -238,7 +247,6 @@ def test_local_news_headlines_request_is_cache_stable():
 def test_local_news_bearer_auth_from_headers_config():
     ds = _news(headers={"Authorization": "Bearer super-secret-key"})
     request = ds.build_request("POST", ds._api_endpoint, json={})
-    assert request is not None
     assert request.headers["authorization"] == "Bearer super-secret-key"
     assert "super-secret-key" not in repr(ds)
     assert "*" in repr(ds)
@@ -247,7 +255,6 @@ def test_local_news_bearer_auth_from_headers_config():
 def test_local_news_no_authorization_without_headers():
     ds = LocalNewsDatasource()
     request = ds.build_request("POST", ds._api_endpoint, json={})
-    assert request is not None
     assert "authorization" not in request.headers
 
 

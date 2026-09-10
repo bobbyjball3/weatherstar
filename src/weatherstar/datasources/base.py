@@ -1,13 +1,18 @@
 """Datasource abstraction: configurable, optionally authenticated data access.
 
 Concrete datasources fetch from external APIs (NOAA, Open Meteo, USGS, Alpha
-Vantage, webz.io, ...).  The base owns every cross-cutting HTTP concern so a
-datasource only has to (1) build a request and (2) read the response:
+Vantage, webz.io, ...).  The base owns every cross-cutting HTTP concern and
+splits a fetch into two readable steps:
 
-- a lazily created ``httpx.Client`` whose headers/query come from config;
-- the :meth:`Datasource.fetch` driver, which sends a request and transparently
-  caches the result (success or failure) for ``cache_ttl`` seconds;
-- graceful ``None`` on transport/HTTP/decode failures.
+- :meth:`Datasource.build_request` builds an ``httpx.Request`` with the
+  configured headers/query merged in;
+- :meth:`Datasource.response_json` / :meth:`response_bytes` read the response.
+
+:meth:`Datasource.send` performs the request itself (timeout, status logging,
+graceful ``None`` on failure), so a datasource never touches the HTTP client.
+Method results are cached with the base-vended :func:`~weatherstar.plugin.memoize`
+decorator, keyed by the method and its arguments rather than the request, so the
+cache stays stable as a request's shape changes.
 
 Authentication-related config values are typed ``SecretStr`` and are therefore
 masked by ``repr`` / ``str`` / the logging redaction processor.
@@ -15,11 +20,9 @@ masked by ``repr`` / ``str`` / the logging redaction processor.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import httpx
-from cachetools import TTLCache
 from pydantic import Field, PrivateAttr, SecretStr
 
 from weatherstar.logging_setup import get_logger
@@ -44,15 +47,15 @@ class Datasource(Plugin):
     """Base class for plugin datasources.
 
     Subclasses declare typed config fields and implement fetch methods by
-    composing :meth:`build_request` (interface method 1) with
-    :meth:`parse_response` (interface method 2), normally through the
-    :meth:`fetch` driver::
+    composing :meth:`build_request` (request construction) with
+    :meth:`send` (the base-owned HTTP call) and a response reader, then decorate
+    the method with :func:`~weatherstar.plugin.memoize` to cache its result::
 
-        def get_point(self, lat, lon):
-            data = self.fetch("GET", f"{BASE_URL}/points/{lat:.4f},{lon:.4f}")
-            return data["properties"] if data else None
-
-    All HTTP and caching live here; datasources never touch either directly.
+        @memoize(ttl=1800)
+        def get_forecast(self, lat, lon):
+            response = self.send(self.build_request("GET", url, params={"units": "us"}))
+            data = self.response_json(response) or {}
+            return [ForecastPeriod.from_props(r) for r in data["properties"]["periods"]]
     """
 
     kind = "datasource"
@@ -61,7 +64,7 @@ class Datasource(Plugin):
     timeout: float = Field(default=10, description="HTTP request timeout in seconds.")
     cache_ttl: int = Field(
         default=300,
-        description="Seconds each HTTP response is cached (success or failure).",
+        description="Default seconds a memoized fetch is cached (success or failure).",
     )
     headers: dict[str, SecretStr] = Field(
         default_factory=lambda: {"User-Agent": SecretStr("weatherstar (python)")},
@@ -75,7 +78,6 @@ class Datasource(Plugin):
     # -- runtime state (not config) -----------------------------------------
 
     _client: httpx.Client | None = PrivateAttr(default=None)
-    _cache: TTLCache | None = PrivateAttr(default=None)
     _log: Any = PrivateAttr(default_factory=lambda: get_logger("weatherstar.datasource"))
 
     # -- HTTP plumbing ------------------------------------------------------
@@ -95,12 +97,7 @@ class Datasource(Plugin):
             )
         return self._client
 
-    def _cache_for(self) -> TTLCache:
-        if self._cache is None:
-            self._cache = TTLCache(maxsize=256, ttl=self.cache_ttl)
-        return self._cache
-
-    # -- request/response interface -----------------------------------------
+    # -- request construction -----------------------------------------------
 
     def build_request(
         self,
@@ -113,8 +110,8 @@ class Datasource(Plugin):
     ) -> httpx.Request:
         """Build an ``httpx.Request`` with configured headers/query merged in.
 
-        Interface method 1.  Override to customize request construction; the
-        default handles the common case.
+        Override to customize request construction; the default handles the
+        common case.
         """
         return self._client_for().build_request(
             method,
@@ -123,6 +120,8 @@ class Datasource(Plugin):
             json=json,
             timeout=timeout if timeout is not None else self.timeout,
         )
+
+    # -- transport ----------------------------------------------------------
 
     def send(self, request: httpx.Request) -> httpx.Response | None:
         """Send ``request``, returning the response or ``None`` on failure."""
@@ -137,78 +136,22 @@ class Datasource(Plugin):
             self._log.warning("http_failed", url=str(request.url), error=str(exc))
             return None
 
-    def parse_response(self, response: httpx.Response) -> Any:
-        """Decode ``response`` into a datasource value.
+    # -- response readers ---------------------------------------------------
 
-        Interface method 2.  The default decodes JSON; override for other media
-        (e.g. :class:`~weatherstar.datasources.radar.NoaaRadar` returns bytes).
-        """
-        return self.response_json(response)
-
-    def response_json(self, response: httpx.Response) -> dict | list | None:
-        """Decoded JSON body, or ``None`` when the body is not valid JSON."""
+    @staticmethod
+    def response_json(response: httpx.Response | None) -> dict | list | None:
+        """Decoded JSON body, or ``None`` when absent or not valid JSON."""
+        if response is None:
+            return None
         try:
             return response.json()
         except ValueError:
             return None
 
     @staticmethod
-    def response_bytes(response: httpx.Response) -> bytes:
-        """Raw response body."""
-        return response.content
-
-    # -- driver -------------------------------------------------------------
-
-    def fetch(
-        self,
-        method: str,
-        url: str,
-        *,
-        params: dict[str, Any] | None = None,
-        json: Any = None,
-        timeout: float | None = None,
-    ) -> Any:
-        """Build, send and parse a request, caching the result for ``cache_ttl``.
-
-        Failures are cached too (negative cache), so an unreachable API is
-        retried once per TTL rather than on every call.
-        """
-        key = self._cache_key(method, url, params, json)
-        cache = self._cache_for()
-        if key in cache:
-            return cache[key]
-        value = self._fetch_uncached(method, url, params=params, json=json, timeout=timeout)
-        cache[key] = value
-        return value
-
-    def _fetch_uncached(
-        self,
-        method: str,
-        url: str,
-        *,
-        params: dict[str, Any] | None,
-        json: Any,
-        timeout: float | None,
-    ) -> Any:
-        request = self.build_request(method, url, params=params, json=json, timeout=timeout)
-        response = self.send(request)
-        if response is None:
-            return None
-        return self.parse_response(response)
-
-    @staticmethod
-    def _cache_key(
-        method: str,
-        url: str,
-        params: dict[str, Any] | None,
-        body: Any,
-    ) -> tuple[str, str, str, str]:
-        return (
-            method.upper(),
-            url,
-            json.dumps(params, sort_keys=True, default=str) if params else "",
-            json.dumps(body, sort_keys=True, default=str) if body is not None else "",
-        )
+    def response_bytes(response: httpx.Response | None) -> bytes | None:
+        """Raw response body, or ``None`` when the request failed."""
+        return None if response is None else response.content
 
     # -- lifecycle -----------------------------------------------------------
 
