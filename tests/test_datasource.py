@@ -51,7 +51,7 @@ def test_build_request_merges_headers_and_query():
             "query": {"apikey": "abc"},
         }
     )
-    request = ds.build_request("GET", "https://example.test/x", params={"a": "1"})
+    request = ds.client.build_request("GET", "https://example.test/x", params={"a": "1"})
     assert request.headers["x-api"] == "s3cret"
     assert request.headers["user-agent"] == "weatherstar (python)"
     url = str(request.url)
@@ -62,20 +62,20 @@ def test_build_request_merges_headers_and_query():
 def test_send_returns_response_on_success():
     ds = PlainDS()
     ds._client = _client(lambda request: httpx.Response(200, json={"ok": 1}))
-    response = ds.send(ds.build_request("GET", "https://example.test/x"))
+    response = ds.send(ds.client.build_request("GET", "https://example.test/x"))
     assert response is not None
     assert response.status_code == 200
 
 
 def test_send_returns_none_for_bad_url():
     ds = PlainDS()
-    assert ds.send(ds.build_request("GET", "not-a-url")) is None
+    assert ds.send(ds.client.build_request("GET", "not-a-url")) is None
 
 
 def test_send_returns_none_on_http_error():
     ds = PlainDS()
     ds._client = _client(lambda request: httpx.Response(500))
-    assert ds.send(ds.build_request("GET", "https://example.test/x")) is None
+    assert ds.send(ds.client.build_request("GET", "https://example.test/x")) is None
 
 
 def test_response_json_reads_and_guards():

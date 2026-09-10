@@ -57,7 +57,7 @@ def test_stock_quote_parses():
 
 def test_stock_api_key_sent_as_query_param():
     ds = _stocks(query={"apikey": "k"})
-    request = ds.build_request(
+    request = ds.client.build_request(
         "GET",
         "https://www.alphavantage.co/query",
         params={"function": "GLOBAL_QUOTE", "symbol": "DIA"},
@@ -246,7 +246,7 @@ def test_local_news_headlines_request_is_cache_stable():
 
 def test_local_news_bearer_auth_from_headers_config():
     ds = _news(headers={"Authorization": "Bearer super-secret-key"})
-    request = ds.build_request("POST", ds._api_endpoint, json={})
+    request = ds.client.build_request("POST", ds._api_endpoint, json={})
     assert request.headers["authorization"] == "Bearer super-secret-key"
     assert "super-secret-key" not in repr(ds)
     assert "*" in repr(ds)
@@ -254,7 +254,7 @@ def test_local_news_bearer_auth_from_headers_config():
 
 def test_local_news_no_authorization_without_headers():
     ds = LocalNewsDatasource()
-    request = ds.build_request("POST", ds._api_endpoint, json={})
+    request = ds.client.build_request("POST", ds._api_endpoint, json={})
     assert "authorization" not in request.headers
 
 

@@ -94,12 +94,12 @@ cross-cutting HTTP concern. Each operation is written as two pure methods — on
 that builds the request, one that reads the response — and the base's `fetch`
 owns the transport:
 
-- `build_request(method, url, params=..., json=...)` builds an `httpx.Request`,
-  merging the configured `headers` / `query`;
+- `client` is the configured `httpx.Client`; a request method builds its
+  `httpx.Request` with `self.client.build_request(...)`, deciding the
+  method/url/params/body itself;
 - `fetch(request, process, **context)` sends it (`send`) and returns
   `process(response, **context)`. `send` handles timeout, status logging and
-  graceful `None` on transport/HTTP failure — a datasource never touches the
-  client;
+  graceful `None` on transport/HTTP failure;
 - `response_json(response)` / `response_bytes(response)` read the body.
 
 A datasource keeps the two halves in named methods and caches the result with
@@ -107,7 +107,7 @@ the base-vended `@memoize` decorator:
 
 ```python
 def _forecast_request(self, url: str) -> httpx.Request:
-    return self.build_request("GET", url, params={"units": "us"})
+    return self.client.build_request("GET", url, params={"units": "us"})
 
 
 def _forecast_response(self, response) -> list[ForecastPeriod]:

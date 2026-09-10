@@ -78,7 +78,7 @@ class LocalNewsDatasource(Datasource):
                 "category": self.news_categories,
             },
         }
-        return self.build_request("POST", self._api_endpoint, json=body)
+        return self.client.build_request("POST", self._api_endpoint, json=body)
 
     def _headlines_response(self, response: httpx.Response | None) -> list[Headline]:
         payload = self.response_json(response)

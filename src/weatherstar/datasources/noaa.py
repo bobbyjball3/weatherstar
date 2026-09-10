@@ -392,25 +392,27 @@ class NoaaWeather(Datasource):
     # -- requests -----------------------------------------------------------
 
     def _point_request(self, lat: float, lon: float) -> httpx.Request:
-        return self.build_request("GET", f"{BASE_URL}/points/{lat:.4f},{lon:.4f}")
+        return self.client.build_request("GET", f"{BASE_URL}/points/{lat:.4f},{lon:.4f}")
 
     def _stations_request(self, stations_url: str) -> httpx.Request:
-        return self.build_request("GET", stations_url)
+        return self.client.build_request("GET", stations_url)
 
     def _observation_request(self, station_id: str) -> httpx.Request:
-        return self.build_request("GET", f"{BASE_URL}/stations/{station_id}/observations/latest")
+        return self.client.build_request(
+            "GET", f"{BASE_URL}/stations/{station_id}/observations/latest"
+        )
 
     def _periods_request(
         self, office: str, grid_x: int, grid_y: int, path: str, units: str
     ) -> httpx.Request:
         url = f"{BASE_URL}/gridpoints/{office}/{grid_x},{grid_y}/{path}"
-        return self.build_request("GET", url, params={"units": units})
+        return self.client.build_request("GET", url, params={"units": units})
 
     def _gridpoint_request(self, forecast_url: str) -> httpx.Request:
-        return self.build_request("GET", forecast_url, params={"units": "us"})
+        return self.client.build_request("GET", forecast_url, params={"units": "us"})
 
     def _station_meta_request(self, station_id: str) -> httpx.Request:
-        return self.build_request("GET", f"{BASE_URL}/stations/{station_id}")
+        return self.client.build_request("GET", f"{BASE_URL}/stations/{station_id}")
 
     # -- responses ----------------------------------------------------------
 

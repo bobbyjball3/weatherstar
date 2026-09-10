@@ -115,7 +115,7 @@ class NoaaAlertsDatasource(Datasource):
     )
 
     def _alerts_request(self, lat: float, lon: float) -> httpx.Request:
-        return self.build_request(
+        return self.client.build_request(
             "GET", NOAA_ALERTS_URL, params={"point": f"{lat},{lon}"}, timeout=5
         )
 
@@ -151,7 +151,7 @@ class EarthquakesDatasource(Datasource):
             "limit": self.limit,
             "orderby": "time",
         }
-        return self.build_request("GET", USGS_URL, params=params)
+        return self.client.build_request("GET", USGS_URL, params=params)
 
     def _recent_response(self, response: httpx.Response | None) -> list[Earthquake]:
         result: list[Earthquake] = []
@@ -189,7 +189,7 @@ class UvIndexDatasource(Datasource):
             "timezone": "auto",
             "forecast_days": self.days,
         }
-        return self.build_request("GET", OM_UV_URL, params=params)
+        return self.client.build_request("GET", OM_UV_URL, params=params)
 
     def _daily_response(self, response: httpx.Response | None) -> list[UvReading]:
         daily = (self.response_json(response) or {}).get("daily") or {}
@@ -247,7 +247,7 @@ class StockMarketDatasource(Datasource):
         return result
 
     def _quote_request(self, symbol: str) -> httpx.Request:
-        return self.build_request(
+        return self.client.build_request(
             "GET",
             "https://www.alphavantage.co/query",
             params={"function": "GLOBAL_QUOTE", "symbol": symbol},

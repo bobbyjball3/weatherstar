@@ -4,8 +4,9 @@ Concrete datasources fetch from external APIs (NOAA, Open Meteo, USGS, Alpha
 Vantage, webz.io, ...).  The base owns every cross-cutting HTTP concern and
 keeps the two halves of a fetch apart:
 
-- ``build_request`` (called by a datasource's own request method) constructs an
-  ``httpx.Request`` with the configured headers/query merged in;
+- ``client`` is an ``httpx.Client`` carrying the configured headers/query/
+  timeout; a datasource's own request method builds an ``httpx.Request`` with
+  it, deciding method/url/params/body itself;
 - ``response_json`` / ``response_bytes`` (called by its response method) read
   the body.
 
@@ -54,7 +55,7 @@ class Datasource(Plugin):
     :func:`~weatherstar.plugin.memoize` to cache its result::
 
         def _forecast_request(self, url: str) -> httpx.Request:
-            return self.build_request("GET", url, params={"units": "us"})
+            return self.client.build_request("GET", url, params={"units": "us"})
 
         def _forecast_response(self, response) -> list[ForecastPeriod]:
             data = self.response_json(response) or {}
@@ -94,7 +95,12 @@ class Datasource(Plugin):
         """Reveal secret config values (only at the HTTP boundary)."""
         return {key: value.get_secret_value() for key, value in values.items()}
 
-    def _client_for(self) -> httpx.Client:
+    @property
+    def client(self) -> httpx.Client:
+        """The configured ``httpx.Client`` (headers/query/timeout applied).
+
+        Datasources prepare their requests with ``self.client.build_request``.
+        """
         if self._client is None:
             self._client = httpx.Client(
                 headers=self._unwrap(self.headers),
@@ -104,36 +110,12 @@ class Datasource(Plugin):
             )
         return self._client
 
-    # -- request construction -----------------------------------------------
-
-    def build_request(
-        self,
-        method: str,
-        url: str,
-        *,
-        params: dict[str, Any] | None = None,
-        json: Any = None,
-        timeout: float | None = None,
-    ) -> httpx.Request:
-        """Build an ``httpx.Request`` with configured headers/query merged in.
-
-        Override to customize request construction; the default handles the
-        common case.
-        """
-        return self._client_for().build_request(
-            method,
-            url,
-            params=params,
-            json=json,
-            timeout=timeout if timeout is not None else self.timeout,
-        )
-
     # -- transport ----------------------------------------------------------
 
     def send(self, request: httpx.Request) -> httpx.Response | None:
         """Send ``request``, returning the response or ``None`` on failure."""
         try:
-            response = self._client_for().send(request)
+            response = self.client.send(request)
             self._log.debug(
                 "http", method=request.method, url=str(request.url), status=response.status_code
             )

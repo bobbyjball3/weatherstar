@@ -66,7 +66,7 @@ class NoaaRadar(Datasource):
     # -- fetching -------------------------------------------------------------
 
     def _frame_request(self, url: str) -> httpx.Request:
-        return self.build_request("GET", url)
+        return self.client.build_request("GET", url)
 
     def _frame_response(self, response: httpx.Response | None) -> bytes | None:
         data = self.response_bytes(response)

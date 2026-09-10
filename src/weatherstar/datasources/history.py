@@ -52,7 +52,7 @@ class HistoryDatasource(Datasource):
     # -- fetching ------------------------------------------------------------
 
     def _daily_request(self, lat: float, lon: float) -> httpx.Request:
-        return self.build_request(
+        return self.client.build_request(
             "GET",
             _HISTORY_URL,
             params={
