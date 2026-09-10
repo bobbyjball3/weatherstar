@@ -118,7 +118,7 @@ def test_ws3000_theme_loads_with_assets(all_appcfg, pygame_env):
     assert theme.layout_for("almanac")["title_text"] == "The Weatherstar Almanac"
     assert theme.layout_for("regional_forecast")["variant"] == "3000"
     repo_root = Path(__file__).resolve().parents[1]
-    assert (repo_root / "static_assets" / "weatherstar_3000" / "fonts_ttf").is_dir()
+    assert (repo_root / "static_assets" / "weatherstar_3000" / "fonts").is_dir()
     assert (repo_root / "static_assets" / "weatherstar_3000" / "backgrounds" / "1.png").is_file()
 
 

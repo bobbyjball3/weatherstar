@@ -6,7 +6,7 @@ Asset tree for the built-in `weatherstar3000` theme (see
 
 Contents:
 
-- `fonts_ttf/` — `Star3000*.ttf`, the authentic Weather Star 3000 typeface
+- `fonts/` — `Star3000*.ttf`, the authentic Weather Star 3000 typeface
   originally drawn by Nick Smith (http://twcclassics.com/downloads/fonts.html).
 - `backgrounds/` — `1.png`, the single deep-blue 640x480 Weather Star 3000
   background used by every display (drawn from scratch by the ws3kp project).

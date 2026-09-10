@@ -72,7 +72,7 @@ it omits falls back to the base value. Only define what your look overrides.
 ### `asset_dir`
 
 When set, the media plugins (`fonts`, `backgrounds`, `logos`, `icons`) load from
-`<asset_dir>/fonts_ttf/`, `<asset_dir>/backgrounds/`, etc. instead of the repo's
+`<asset_dir>/fonts/`, `<asset_dir>/backgrounds/`, etc. instead of the repo's
 `static_assets/weatherstar_4000/`. This is how a theme supplies its own typeface,
 background art, logos and icons with no code changes.
 

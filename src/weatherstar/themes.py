@@ -170,7 +170,7 @@ class Theme:
     Colors use semantic keys (``white``, ``yellow``, ``blue_gradient_2``, ...);
     ``fonts`` maps the named font slots to ``(file, size)`` overrides used by
     the ``fonts`` media plugin; ``asset_dir`` points at the theme's own
-    ``fonts_ttf``/``backgrounds``/``logos``/``icons`` tree.
+    ``fonts``/``backgrounds``/``logos``/``icons`` tree.
 
     Layout is data too: ``text_shadow`` turns on the black outline + drop
     shadow under all rendered text (used by the Weather Star 3000 look),

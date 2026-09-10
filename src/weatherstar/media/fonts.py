@@ -1,7 +1,7 @@
 """Fonts media: loads the Star4000 font set into ``ctx.fonts``.
 
-Looked up from ``<asset_dir>/fonts_ttf`` when available, otherwise falls back to
-named system monospace fonts, then to pygame's default font.
+Looked up from ``<asset_dir>/fonts``; when the directory or files are absent it
+falls back to named system monospace fonts, then to pygame's default font.
 """
 
 from __future__ import annotations
@@ -43,9 +43,9 @@ def _fallback_font_path(bold: bool = False) -> str | None:
 @plugin
 class Fonts(FontSet):
     name = "fonts"
-    #: Subdirectories of ``asset_dir`` tried for the font files (drives whether
+    #: Subdirectory of ``asset_dir`` scanned for the font files (drives whether
     #: a theme supplies its own typeface).
-    asset_subdirs = ("fonts_ttf", "fonts")
+    asset_subdirs = ("fonts",)
 
     def _resolved_specs(self, ctx: Any, fonts_dir: Path) -> dict[str, tuple[str, int]]:
         """Font slots, with the active theme's ``[fonts]`` mapping applied.
@@ -68,9 +68,7 @@ class Fonts(FontSet):
         return specs
 
     def load(self, ctx: Any) -> Any:
-        fonts_dir = Path(self.asset_dir) / "fonts_ttf"
-        if not fonts_dir.exists():  # pragma: no cover - depends on assets present
-            fonts_dir = Path(self.asset_dir) / "fonts"
+        fonts_dir = Path(self.asset_dir) / "fonts"
         specs = self._resolved_specs(ctx, fonts_dir)
         loaded: dict[str, pygame.font.Font] = {}
         for key, (file_name, size) in specs.items():

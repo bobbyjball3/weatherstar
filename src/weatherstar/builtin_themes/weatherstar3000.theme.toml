@@ -7,7 +7,7 @@
 # screens the 3000 actually had get dedicated "[layout.<screen>]" tokens.
 #
 # Assets come from the MIT-licensed ws3kp project (fonts by Nick Smith /
-# TWCClassics). Drop them under the asset_dir: fonts_ttf/Star3000*.ttf and
+# TWCClassics). Drop them under the asset_dir: fonts/Star3000*.ttf and
 # backgrounds/1.png. Without the assets the theme degrades gracefully to
 # system fonts and a generated gradient.
 title = "Weather Star 3000"
