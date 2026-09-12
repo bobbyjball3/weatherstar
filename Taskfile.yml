@@ -71,3 +71,23 @@ tasks:
     desc: Install pre-commit hooks
     cmds:
       - uv run pre-commit install
+
+  docker-build:
+    desc: Build the stream image (VARIANT=rk1 for the RK1/hardware build)
+    vars:
+      VARIANT: '{{default "" .VARIANT}}'
+    cmds:
+      - docker build {{if eq .VARIANT "rk1"}}-f Dockerfile.rk1 -t weatherstar-stream:rk1{{else}}-t weatherstar-stream{{end}} .
+
+  docker-push:
+    desc: Tag and push the RK1 stream image to a registry as :VERSION and :latest
+    requires:
+      vars: [REGISTRY]
+    vars:
+      VERSION:
+        sh: sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml
+    cmds:
+      - docker tag weatherstar-stream:rk1 {{.REGISTRY}}/weatherstar-stream:{{.VERSION}}
+      - docker tag weatherstar-stream:rk1 {{.REGISTRY}}/weatherstar-stream:latest
+      - docker push {{.REGISTRY}}/weatherstar-stream:{{.VERSION}}
+      - docker push {{.REGISTRY}}/weatherstar-stream:latest
